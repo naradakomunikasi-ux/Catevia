@@ -1,0 +1,6 @@
+{
+  "name": "Catevia — Sistem Manajemen Katekese Paroki",
+  "description": "Platform manajemen katekese dan pembinaan iman paroki yang modern, intuitif, dan ramah untuk seluruh peran pengguna.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

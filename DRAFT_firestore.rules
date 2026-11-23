@@ -1,0 +1,766 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Pillar 4 #1: Global Safety Net (Default Deny)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // =========================================================================
+    // GLOBAL PRIMITIVES & RBAC HELPERS
+    // =========================================================================
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isOwner(uid) {
+      return isVerified() && request.auth.uid == uid;
+    }
+
+    function isBootstrappedAdmin() {
+      return isVerified() && request.auth.token.email == 'michael.gani@gmail.com';
+    }
+
+    function userProfileExists() {
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function userProfile() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isAdmin() {
+      return isBootstrappedAdmin() || (
+        isVerified() &&
+        userProfileExists() &&
+        userProfile().active == true &&
+        userProfile().role == 'admin'
+      );
+    }
+
+    function isOperational() {
+      return isVerified() &&
+        userProfileExists() &&
+        userProfile().active == true &&
+        userProfile().role == 'operational';
+    }
+
+    function isApprover() {
+      return isVerified() &&
+        userProfileExists() &&
+        userProfile().active == true &&
+        userProfile().role == 'approver';
+    }
+
+    function isParishStaff() {
+      return isAdmin() || isOperational() || isApprover();
+    }
+
+    function isStaffWriter() {
+      return isAdmin() || isOperational();
+    }
+
+    function isValidProgram(val) {
+      return val in ['Katekumen (Baptis Dewasa)', 'Komuni Pertama', 'Krisma (Penguatan)'];
+    }
+
+    // =========================================================================
+    // VALIDATION BLUEPRINTS (Pillar 2 — Anti-Update-Gap)
+    // =========================================================================
+
+    function isValidUser(data) {
+      return data.keys().hasAll([
+          'uid', 'name', 'email', 'role', 'lingkungan', 'active', 'lastActive', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'uid', 'name', 'email', 'role', 'lingkungan', 'active', 'lastActive', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.uid) &&
+        data.name is string && data.name.size() >= 1 && data.name.size() <= 120 &&
+        data.email is string && data.email.size() >= 3 && data.email.size() <= 160 &&
+        data.role in ['admin', 'operational', 'approver', 'general'] &&
+        data.lingkungan is string && data.lingkungan.size() >= 1 && data.lingkungan.size() <= 100 &&
+        data.active is bool &&
+        data.lastActive is string && data.lastActive.size() <= 64 &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidMaterialProgress(data, userId, materialId) {
+      return data.keys().hasAll(['userId', 'materialId', 'completed', 'updatedAt']) &&
+        data.keys().hasOnly(['userId', 'materialId', 'completed', 'updatedAt']) &&
+        data.userId == userId &&
+        data.materialId == materialId &&
+        data.completed is bool &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidDocumentsMap(docs) {
+      return docs is map &&
+        docs.keys().hasAll(['ktpKk', 'suratBaptisAtauRekomendasi', 'pasFoto']) &&
+        docs.keys().hasOnly(['ktpKk', 'suratBaptisAtauRekomendasi', 'pasFoto']) &&
+        docs.ktpKk is bool &&
+        docs.suratBaptisAtauRekomendasi is bool &&
+        docs.pasFoto is bool;
+    }
+
+    function isValidParticipant(data) {
+      return data.keys().hasAll([
+          'code', 'fullName', 'birthDate', 'phone', 'email', 'lingkungan',
+          'program', 'classId', 'sponsorName', 'status', 'attendanceCount',
+          'totalSessions', 'registeredAt', 'ownerUid', 'documents', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'code', 'fullName', 'birthDate', 'phone', 'email', 'lingkungan',
+          'program', 'classId', 'sponsorName', 'status', 'attendanceCount',
+          'totalSessions', 'registeredAt', 'ownerUid', 'documents', 'notes', 'createdAt', 'updatedAt'
+        ]) &&
+        data.code is string && data.code.size() >= 3 && data.code.size() <= 32 && data.code.matches('^[A-Z0-9\\-]+$') &&
+        data.fullName is string && data.fullName.size() >= 2 && data.fullName.size() <= 120 &&
+        data.birthDate is string && data.birthDate.size() >= 8 && data.birthDate.size() <= 20 &&
+        data.phone is string && data.phone.size() >= 6 && data.phone.size() <= 30 &&
+        data.email is string && data.email.size() <= 160 &&
+        data.lingkungan is string && data.lingkungan.size() >= 2 && data.lingkungan.size() <= 80 &&
+        isValidProgram(data.program) &&
+        isValidId(data.classId) &&
+        data.sponsorName is string && data.sponsorName.size() >= 2 && data.sponsorName.size() <= 120 &&
+        data.status in ['Aktif', 'Menunggu Verifikasi', 'Perlu Revisi', 'Siap Sakramen', 'Selesai'] &&
+        data.attendanceCount is int && data.attendanceCount >= 0 && data.attendanceCount <= 100 &&
+        data.totalSessions is int && data.totalSessions >= 1 && data.totalSessions <= 100 &&
+        data.registeredAt is string && data.registeredAt.size() >= 8 && data.registeredAt.size() <= 20 &&
+        isValidId(data.ownerUid) &&
+        isValidDocumentsMap(data.documents) &&
+        (!('notes' in data) || (data.notes is string && data.notes.size() <= 600)) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidAttachment(data, participantId, docType) {
+      return data.keys().hasAll([
+          'participantId', 'docType', 'fileName', 'mimeType', 'fileSizeBytes',
+          'uploadedByUid', 'uploadedByName', 'uploadedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'participantId', 'docType', 'fileName', 'mimeType', 'fileSizeBytes',
+          'previewDataUrl', 'uploadedByUid', 'uploadedByName', 'uploadedAt'
+        ]) &&
+        data.participantId == participantId &&
+        data.docType == docType &&
+        docType in ['ktpKk', 'suratBaptisAtauRekomendasi', 'pasFoto'] &&
+        data.fileName is string && data.fileName.size() >= 1 && data.fileName.size() <= 160 &&
+        data.mimeType in ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'] &&
+        data.fileSizeBytes is int && data.fileSizeBytes > 0 && data.fileSizeBytes <= 10485760 &&
+        (
+          !('previewDataUrl' in data) ||
+          (
+            data.previewDataUrl is string &&
+            data.previewDataUrl.size() <= 180000 &&
+            (
+              (data.mimeType == 'application/pdf' && data.previewDataUrl.matches('^data:application/pdf;base64,[A-Za-z0-9+/=]+$')) ||
+              (data.mimeType in ['image/jpeg', 'image/png', 'image/webp'] && data.previewDataUrl.matches('^data:image/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$'))
+            )
+          )
+        ) &&
+        data.uploadedByUid == request.auth.uid &&
+        data.uploadedByName is string && data.uploadedByName.size() >= 1 && data.uploadedByName.size() <= 120 &&
+        data.uploadedAt is timestamp;
+    }
+
+    function isValidClass(data) {
+      return data.keys().hasAll([
+          'code', 'name', 'program', 'catechistName', 'scheduleDay', 'scheduleTime',
+          'room', 'capacity', 'status', 'sessions', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'code', 'name', 'program', 'catechistName', 'scheduleDay', 'scheduleTime',
+          'room', 'capacity', 'status', 'sessions', 'createdAt', 'updatedAt'
+        ]) &&
+        data.code is string && data.code.size() >= 3 && data.code.size() <= 32 && data.code.matches('^[A-Z0-9\\-]+$') &&
+        data.name is string && data.name.size() >= 3 && data.name.size() <= 140 &&
+        isValidProgram(data.program) &&
+        data.catechistName is string && data.catechistName.size() >= 2 && data.catechistName.size() <= 120 &&
+        data.scheduleDay is string && data.scheduleDay.size() >= 3 && data.scheduleDay.size() <= 20 &&
+        data.scheduleTime is string && data.scheduleTime.size() >= 3 && data.scheduleTime.size() <= 40 &&
+        data.room is string && data.room.size() >= 2 && data.room.size() <= 100 &&
+        data.capacity is int && data.capacity >= 1 && data.capacity <= 200 &&
+        data.status in ['Aktif', 'Selesai', 'Dijadwalkan'] &&
+        data.sessions is list && data.sessions.size() <= 50 &&
+        (data.sessions.size() == 0 || data.sessions[0] is map) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidApproval(data) {
+      return data.keys().hasAll([
+          'code', 'participantId', 'participantName', 'program', 'lingkungan',
+          'requestType', 'submittedBy', 'submittedByUid', 'submittedAt', 'status',
+          'attendanceSummary', 'documentsComplete', 'summaryNote', 'history',
+          'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'code', 'participantId', 'participantName', 'program', 'lingkungan',
+          'requestType', 'submittedBy', 'submittedByUid', 'submittedAt', 'status',
+          'attendanceSummary', 'documentsComplete', 'summaryNote', 'decisionNote',
+          'decidedAt', 'decidedBy', 'history', 'createdAt', 'updatedAt'
+        ]) &&
+        data.code is string && data.code.size() >= 3 && data.code.size() <= 32 && data.code.matches('^[A-Z0-9\\-]+$') &&
+        isValidId(data.participantId) &&
+        data.participantName is string && data.participantName.size() >= 2 && data.participantName.size() <= 120 &&
+        isValidProgram(data.program) &&
+        data.lingkungan is string && data.lingkungan.size() >= 2 && data.lingkungan.size() <= 80 &&
+        data.requestType in ['Kelayakan Penerimaan Sakramen', 'Verifikasi Berkas Pendaftaran', 'Perpindahan Kelas'] &&
+        data.submittedBy is string && data.submittedBy.size() >= 2 && data.submittedBy.size() <= 120 &&
+        isValidId(data.submittedByUid) &&
+        data.submittedAt is string && data.submittedAt.size() >= 8 && data.submittedAt.size() <= 20 &&
+        data.status in ['Menunggu', 'Disetujui', 'Perlu Revisi', 'Ditolak'] &&
+        data.attendanceSummary is string && data.attendanceSummary.size() >= 2 && data.attendanceSummary.size() <= 120 &&
+        data.documentsComplete is bool &&
+        data.summaryNote is string && data.summaryNote.size() <= 600 &&
+        (!('decisionNote' in data) || (data.decisionNote is string && data.decisionNote.size() <= 600)) &&
+        (!('decidedAt' in data) || (data.decidedAt is string && data.decidedAt.size() <= 24)) &&
+        (!('decidedBy' in data) || (data.decidedBy is string && data.decidedBy.size() <= 120)) &&
+        data.history is list && data.history.size() >= 1 && data.history.size() <= 25 &&
+        data.history[0] is map &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidMaterial(data) {
+      return data.keys().hasAll([
+          'title', 'program', 'sessionNumber', 'durationMinutes', 'author',
+          'updatedAt', 'summary', 'keyPoints', 'createdAt'
+        ]) &&
+        data.keys().hasOnly([
+          'title', 'program', 'sessionNumber', 'durationMinutes', 'author',
+          'updatedAt', 'summary', 'keyPoints', 'createdAt'
+        ]) &&
+        data.title is string && data.title.size() >= 3 && data.title.size() <= 160 &&
+        (isValidProgram(data.program) || data.program == 'Semua Program') &&
+        data.sessionNumber is int && data.sessionNumber >= 1 && data.sessionNumber <= 100 &&
+        data.durationMinutes is int && data.durationMinutes >= 5 && data.durationMinutes <= 300 &&
+        data.author is string && data.author.size() >= 2 && data.author.size() <= 120 &&
+        data.updatedAt is string && data.updatedAt.size() >= 8 && data.updatedAt.size() <= 24 &&
+        data.summary is string && data.summary.size() >= 5 && data.summary.size() <= 1000 &&
+        data.keyPoints is list && data.keyPoints.size() >= 1 && data.keyPoints.size() <= 20 &&
+        data.keyPoints[0] is string &&
+        data.createdAt is timestamp;
+    }
+
+    function isValidSettings(data) {
+      return data.keys().hasAll([
+          'parishName', 'diocese', 'academicYear', 'minimumAttendancePercent',
+          'pastorName', 'coordinatorName', 'contactEmail', 'contactPhone',
+          'autoNotifyLingkungan', 'requireSponsorVerification', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'parishName', 'diocese', 'academicYear', 'minimumAttendancePercent',
+          'pastorName', 'coordinatorName', 'contactEmail', 'contactPhone',
+          'autoNotifyLingkungan', 'requireSponsorVerification', 'updatedAt'
+        ]) &&
+        data.parishName is string && data.parishName.size() >= 2 && data.parishName.size() <= 120 &&
+        data.diocese is string && data.diocese.size() >= 2 && data.diocese.size() <= 120 &&
+        data.academicYear is string && data.academicYear.size() >= 3 && data.academicYear.size() <= 80 &&
+        data.minimumAttendancePercent is int && data.minimumAttendancePercent >= 50 && data.minimumAttendancePercent <= 100 &&
+        data.pastorName is string && data.pastorName.size() >= 2 && data.pastorName.size() <= 120 &&
+        data.coordinatorName is string && data.coordinatorName.size() >= 2 && data.coordinatorName.size() <= 120 &&
+        data.contactEmail is string && data.contactEmail.size() >= 3 && data.contactEmail.size() <= 160 &&
+        data.contactPhone is string && data.contactPhone.size() <= 40 &&
+        data.autoNotifyLingkungan is bool &&
+        data.requireSponsorVerification is bool &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidNotification(data) {
+      return data.keys().hasAll([
+          'title', 'description', 'timeLabel', 'read', 'targetPage', 'roles', 'createdAt'
+        ]) &&
+        data.keys().hasOnly([
+          'title', 'description', 'timeLabel', 'read', 'targetPage', 'roles', 'recipientUid', 'createdAt'
+        ]) &&
+        data.title is string && data.title.size() >= 2 && data.title.size() <= 160 &&
+        data.description is string && data.description.size() >= 2 && data.description.size() <= 400 &&
+        data.timeLabel is string && data.timeLabel.size() <= 40 &&
+        data.read is bool &&
+        data.targetPage in ['dashboard', 'participants', 'classes', 'materials', 'approvals', 'reports', 'cms', 'users', 'settings'] &&
+        data.roles is list && data.roles.size() >= 1 && data.roles.size() <= 4 &&
+        data.roles[0] is string &&
+        (!('recipientUid' in data) || isValidId(data.recipientUid)) &&
+        data.createdAt is timestamp;
+    }
+
+    function isValidFrontpageContent(data) {
+      return data.keys().hasAll([
+          'parishLabel', 'heroTitle', 'heroSubtitle', 'heroPrimaryCtaLabel', 'heroSecondaryCtaLabel',
+          'showScriptureSection', 'scriptureHeading', 'scriptureQuote', 'scriptureSource', 'scriptureNote',
+          'programsEyebrow', 'programsHeading', 'programsSubtitle',
+          'showRolesSection', 'rolesHeading', 'rolesSubtitle', 'roleHighlights',
+          'aboutTitle', 'aboutContent', 'aboutHighlights',
+          'guideTitle', 'guideIntro', 'guideSteps', 'showFaqSection', 'faqs',
+          'contactTitle', 'contactDescription', 'contactAddress', 'contactHours', 'contactEmail', 'contactPhone',
+          'footerTagline', 'footerCopyright', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'parishLabel', 'heroTitle', 'heroSubtitle', 'heroPrimaryCtaLabel', 'heroSecondaryCtaLabel',
+          'showScriptureSection', 'scriptureHeading', 'scriptureQuote', 'scriptureSource', 'scriptureNote',
+          'programsEyebrow', 'programsHeading', 'programsSubtitle',
+          'showRolesSection', 'rolesHeading', 'rolesSubtitle', 'roleHighlights',
+          'aboutTitle', 'aboutContent', 'aboutHighlights',
+          'guideTitle', 'guideIntro', 'guideSteps', 'showFaqSection', 'faqs',
+          'contactTitle', 'contactDescription', 'contactAddress', 'contactHours', 'contactEmail', 'contactPhone',
+          'footerTagline', 'footerCopyright', 'updatedAt'
+        ]) &&
+        data.parishLabel is string && data.parishLabel.size() >= 2 && data.parishLabel.size() <= 120 &&
+        data.heroTitle is string && data.heroTitle.size() >= 4 && data.heroTitle.size() <= 160 &&
+        data.heroSubtitle is string && data.heroSubtitle.size() >= 10 && data.heroSubtitle.size() <= 500 &&
+        data.heroPrimaryCtaLabel is string && data.heroPrimaryCtaLabel.size() >= 2 && data.heroPrimaryCtaLabel.size() <= 60 &&
+        data.heroSecondaryCtaLabel is string && data.heroSecondaryCtaLabel.size() >= 2 && data.heroSecondaryCtaLabel.size() <= 60 &&
+        data.showScriptureSection is bool &&
+        data.scriptureHeading is string && data.scriptureHeading.size() <= 100 &&
+        data.scriptureQuote is string && data.scriptureQuote.size() <= 500 &&
+        data.scriptureSource is string && data.scriptureSource.size() <= 100 &&
+        data.scriptureNote is string && data.scriptureNote.size() <= 300 &&
+        data.programsEyebrow is string && data.programsEyebrow.size() >= 2 && data.programsEyebrow.size() <= 80 &&
+        data.programsHeading is string && data.programsHeading.size() >= 2 && data.programsHeading.size() <= 140 &&
+        data.programsSubtitle is string && data.programsSubtitle.size() <= 300 &&
+        data.showRolesSection is bool &&
+        data.rolesHeading is string && data.rolesHeading.size() <= 120 &&
+        data.rolesSubtitle is string && data.rolesSubtitle.size() <= 300 &&
+        data.roleHighlights is list && data.roleHighlights.size() <= 8 &&
+        (data.roleHighlights.size() == 0 || data.roleHighlights[0] is map) &&
+        data.aboutTitle is string && data.aboutTitle.size() >= 2 && data.aboutTitle.size() <= 160 &&
+        data.aboutContent is string && data.aboutContent.size() >= 10 && data.aboutContent.size() <= 2000 &&
+        data.aboutHighlights is list && data.aboutHighlights.size() <= 12 &&
+        (data.aboutHighlights.size() == 0 || data.aboutHighlights[0] is string) &&
+        data.guideTitle is string && data.guideTitle.size() >= 2 && data.guideTitle.size() <= 160 &&
+        data.guideIntro is string && data.guideIntro.size() <= 500 &&
+        data.guideSteps is list && data.guideSteps.size() <= 10 &&
+        (data.guideSteps.size() == 0 || data.guideSteps[0] is map) &&
+        data.showFaqSection is bool &&
+        data.faqs is list && data.faqs.size() <= 20 &&
+        (data.faqs.size() == 0 || data.faqs[0] is map) &&
+        data.contactTitle is string && data.contactTitle.size() >= 2 && data.contactTitle.size() <= 140 &&
+        data.contactDescription is string && data.contactDescription.size() <= 500 &&
+        data.contactAddress is string && data.contactAddress.size() <= 300 &&
+        data.contactHours is string && data.contactHours.size() <= 200 &&
+        data.contactEmail is string && data.contactEmail.size() <= 160 &&
+        data.contactPhone is string && data.contactPhone.size() <= 100 &&
+        data.footerTagline is string && data.footerTagline.size() <= 180 &&
+        data.footerCopyright is string && data.footerCopyright.size() <= 180 &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidPublicProgram(data) {
+      return data.keys().hasAll([
+          'name', 'iconType', 'audience', 'mode', 'scheduleSummary', 'status',
+          'summary', 'overview', 'learnItems', 'requirements', 'documents',
+          'policyNote', 'linkedProgram', 'published', 'displayOrder', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'name', 'iconType', 'audience', 'mode', 'scheduleSummary', 'status',
+          'summary', 'overview', 'learnItems', 'requirements', 'documents',
+          'policyNote', 'linkedProgram', 'published', 'displayOrder', 'createdAt', 'updatedAt'
+        ]) &&
+        data.name is string && data.name.size() >= 2 && data.name.size() <= 140 &&
+        data.iconType in ['baptis', 'ekaristi', 'krisma', 'persink', 'umum'] &&
+        data.audience is string && data.audience.size() >= 2 && data.audience.size() <= 140 &&
+        data.mode is string && data.mode.size() >= 2 && data.mode.size() <= 120 &&
+        data.scheduleSummary is string && data.scheduleSummary.size() <= 180 &&
+        data.status in ['Pendaftaran Dibuka', 'Akan Dibuka', 'Ditutup'] &&
+        data.summary is string && data.summary.size() >= 5 && data.summary.size() <= 300 &&
+        data.overview is string && data.overview.size() >= 10 && data.overview.size() <= 1200 &&
+        data.learnItems is list && data.learnItems.size() <= 12 &&
+        (data.learnItems.size() == 0 || data.learnItems[0] is string) &&
+        data.requirements is list && data.requirements.size() <= 12 &&
+        (data.requirements.size() == 0 || data.requirements[0] is string) &&
+        data.documents is list && data.documents.size() <= 12 &&
+        (data.documents.size() == 0 || data.documents[0] is string) &&
+        data.policyNote is string && data.policyNote.size() <= 500 &&
+        (data.linkedProgram == '' || isValidProgram(data.linkedProgram)) &&
+        data.published is bool &&
+        data.displayOrder is int && data.displayOrder >= 0 && data.displayOrder <= 500 &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    // =========================================================================
+    // COLLECTION RULES
+    // =========================================================================
+
+    // 1. USERS (PII Isolated to owner or admin; self-assigned roles strictly blocked)
+    match /users/{userId} {
+      allow get: if isVerified() && isValidId(userId) && (isOwner(userId) || isAdmin());
+      allow list: if isVerified() && (isBootstrappedAdmin() || existing().uid == request.auth.uid || isAdmin());
+
+      allow create: if isVerified() &&
+        isValidId(userId) &&
+        isValidUser(incoming()) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        (
+          isAdmin() ||
+          (
+            isOwner(userId) &&
+            incoming().uid == request.auth.uid &&
+            incoming().email == request.auth.token.email &&
+            incoming().role == 'general' &&
+            incoming().active == true
+          )
+        );
+
+      allow update: if isVerified() &&
+        isValidId(userId) &&
+        isValidUser(incoming()) &&
+        incoming().uid == existing().uid &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (
+          (isAdmin() && incoming().diff(existing()).affectedKeys().hasOnly(['role', 'active', 'name', 'lingkungan', 'lastActive', 'updatedAt'])) ||
+          (isOwner(userId) && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'lingkungan', 'lastActive', 'updatedAt']))
+        );
+
+      allow delete: if isVerified() && isValidId(userId) && isAdmin();
+
+      // Per-user reading progress subcollection
+      match /progress/{materialId} {
+        allow get: if isVerified() && isValidId(userId) && isValidId(materialId) && isOwner(userId);
+        allow list: if isVerified() && isOwner(userId);
+        allow create: if isVerified() &&
+          isValidId(userId) &&
+          isValidId(materialId) &&
+          isOwner(userId) &&
+          isValidMaterialProgress(incoming(), userId, materialId) &&
+          incoming().updatedAt == request.time &&
+          exists(/databases/$(database)/documents/materials/$(materialId));
+        allow update: if isVerified() &&
+          isValidId(userId) &&
+          isValidId(materialId) &&
+          isOwner(userId) &&
+          isValidMaterialProgress(incoming(), userId, materialId) &&
+          incoming().updatedAt == request.time &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['completed', 'updatedAt']);
+        allow delete: if isVerified() && isValidId(userId) && isValidId(materialId) && isOwner(userId);
+      }
+    }
+
+    // 2. PARTICIPANTS (PII Isolated to Parish Staff or Owning Participant)
+    match /participants/{participantId} {
+      allow get: if isVerified() && isValidId(participantId) && (
+        existing().ownerUid == request.auth.uid || isParishStaff()
+      );
+      allow list: if isVerified() && (
+        existing().ownerUid == request.auth.uid || isParishStaff()
+      );
+
+      allow create: if isVerified() &&
+        isValidId(participantId) &&
+        isValidParticipant(incoming()) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        exists(/databases/$(database)/documents/classes/$(incoming().classId)) &&
+        (
+          isStaffWriter() ||
+          (
+            incoming().ownerUid == request.auth.uid &&
+            incoming().status == 'Menunggu Verifikasi' &&
+            incoming().attendanceCount == 0
+          )
+        );
+
+      allow update: if isVerified() &&
+        isValidId(participantId) &&
+        isValidParticipant(incoming()) &&
+        incoming().code == existing().code &&
+        incoming().ownerUid == existing().ownerUid &&
+        incoming().registeredAt == existing().registeredAt &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (incoming().classId == existing().classId || exists(/databases/$(database)/documents/classes/$(incoming().classId))) &&
+        (
+          // Tier 1: Admin full editable fields
+          (isAdmin() && incoming().diff(existing()).affectedKeys().hasOnly([
+            'fullName', 'birthDate', 'phone', 'email', 'lingkungan', 'program',
+            'classId', 'sponsorName', 'status', 'attendanceCount', 'totalSessions',
+            'documents', 'notes', 'updatedAt'
+          ])) ||
+          // Tier 2: Operational staff edit / attendance update
+          (isOperational() && incoming().diff(existing()).affectedKeys().hasOnly([
+            'fullName', 'birthDate', 'phone', 'email', 'lingkungan', 'program', 'classId',
+            'sponsorName', 'status', 'attendanceCount', 'documents', 'notes', 'updatedAt'
+          ])) ||
+          // Tier 3: Approver status & pastoral notes sync during approval decision
+          (isApprover() && incoming().diff(existing()).affectedKeys().hasOnly([
+            'status', 'notes', 'updatedAt'
+          ])) ||
+          // Tier 4: Owning participant uploading required documents
+          (existing().ownerUid == request.auth.uid && incoming().diff(existing()).affectedKeys().hasOnly([
+            'documents', 'status', 'notes', 'updatedAt'
+          ]) && incoming().status in ['Aktif', 'Menunggu Verifikasi', 'Perlu Revisi'])
+        );
+
+      allow delete: if isVerified() && isValidId(participantId) && isAdmin();
+
+      // Uploaded document verification attachments subcollection (Master Gate checks parent participant)
+      match /attachments/{docType} {
+        allow get: if isVerified() && isValidId(participantId) && isValidId(docType) && (
+          get(/databases/$(database)/documents/participants/$(participantId)).data.ownerUid == request.auth.uid ||
+          isParishStaff()
+        );
+        allow list: if isVerified() && isValidId(participantId) && (
+          get(/databases/$(database)/documents/participants/$(participantId)).data.ownerUid == request.auth.uid ||
+          isParishStaff()
+        );
+        allow create: if isVerified() &&
+          isValidId(participantId) &&
+          isValidId(docType) &&
+          isValidAttachment(incoming(), participantId, docType) &&
+          incoming().uploadedAt == request.time &&
+          exists(/databases/$(database)/documents/participants/$(participantId)) &&
+          (
+            isStaffWriter() ||
+            get(/databases/$(database)/documents/participants/$(participantId)).data.ownerUid == request.auth.uid
+          );
+        allow update: if isVerified() &&
+          isValidId(participantId) &&
+          isValidId(docType) &&
+          isValidAttachment(incoming(), participantId, docType) &&
+          incoming().uploadedAt == request.time &&
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'fileName', 'mimeType', 'fileSizeBytes', 'previewDataUrl',
+            'uploadedByUid', 'uploadedByName', 'uploadedAt'
+          ]) &&
+          (
+            isStaffWriter() ||
+            get(/databases/$(database)/documents/participants/$(participantId)).data.ownerUid == request.auth.uid
+          );
+        allow delete: if isVerified() && isValidId(participantId) && isValidId(docType) && isStaffWriter();
+      }
+    }
+
+    // 3. CLASSES & ATTENDANCE SESSIONS
+    match /classes/{classId} {
+      allow get: if isVerified() && isValidId(classId);
+      allow list: if isVerified() && existing().status in ['Aktif', 'Selesai', 'Dijadwalkan'];
+
+      allow create: if isVerified() &&
+        isValidId(classId) &&
+        isValidClass(incoming()) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        isStaffWriter();
+
+      allow update: if isVerified() &&
+        isValidId(classId) &&
+        isValidClass(incoming()) &&
+        incoming().code == existing().code &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (
+          (isAdmin() && incoming().diff(existing()).affectedKeys().hasOnly([
+            'name', 'program', 'catechistName', 'scheduleDay', 'scheduleTime',
+            'room', 'capacity', 'status', 'sessions', 'updatedAt'
+          ])) ||
+          (isOperational() && incoming().diff(existing()).affectedKeys().hasOnly([
+            'sessions', 'status', 'updatedAt'
+          ]))
+        );
+
+      allow delete: if isVerified() && isValidId(classId) && isAdmin();
+    }
+
+    // 4. APPROVAL REQUESTS (Terminal State Locked for non-admins)
+    match /approvals/{approvalId} {
+      allow get: if isVerified() && isValidId(approvalId) && isParishStaff();
+      allow list: if isVerified() && isParishStaff();
+
+      allow create: if isVerified() &&
+        isValidId(approvalId) &&
+        isValidApproval(incoming()) &&
+        incoming().submittedByUid == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        isStaffWriter() &&
+        exists(/databases/$(database)/documents/participants/$(incoming().participantId));
+
+      allow update: if isVerified() &&
+        isValidId(approvalId) &&
+        isValidApproval(incoming()) &&
+        incoming().code == existing().code &&
+        incoming().participantId == existing().participantId &&
+        incoming().submittedByUid == existing().submittedByUid &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (
+          (isAdmin() && incoming().diff(existing()).affectedKeys().hasOnly([
+            'status', 'decisionNote', 'decidedAt', 'decidedBy', 'history', 'documentsComplete', 'attendanceSummary', 'updatedAt'
+          ])) ||
+          (
+            isApprover() &&
+            !(existing().status in ['Disetujui', 'Ditolak']) &&
+            incoming().status in ['Disetujui', 'Perlu Revisi', 'Ditolak'] &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'status', 'decisionNote', 'decidedAt', 'decidedBy', 'history', 'updatedAt'
+            ])
+          )
+        );
+
+      allow delete: if isVerified() && isValidId(approvalId) && isAdmin();
+    }
+
+    // 5. STUDY MATERIALS
+    match /materials/{materialId} {
+      allow get: if isVerified() && isValidId(materialId);
+      allow list: if isVerified() && existing().sessionNumber >= 1;
+
+      allow create: if isVerified() &&
+        isValidId(materialId) &&
+        isValidMaterial(incoming()) &&
+        incoming().createdAt == request.time &&
+        isStaffWriter();
+
+      allow update: if isVerified() &&
+        isValidId(materialId) &&
+        isValidMaterial(incoming()) &&
+        incoming().createdAt == existing().createdAt &&
+        isStaffWriter() &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'title', 'program', 'sessionNumber', 'durationMinutes', 'author', 'updatedAt', 'summary', 'keyPoints'
+        ]);
+
+      allow delete: if isVerified() && isValidId(materialId) && isAdmin();
+    }
+
+    // 6. PARISH SETTINGS (/settings/parish)
+    match /settings/{settingId} {
+      allow get: if isVerified() && isValidId(settingId) && settingId == 'parish';
+      allow list: if false;
+
+      allow create: if isVerified() &&
+        isValidId(settingId) &&
+        settingId == 'parish' &&
+        isValidSettings(incoming()) &&
+        incoming().updatedAt == request.time &&
+        isAdmin();
+
+      allow update: if isVerified() &&
+        isValidId(settingId) &&
+        settingId == 'parish' &&
+        isValidSettings(incoming()) &&
+        incoming().updatedAt == request.time &&
+        isAdmin() &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'parishName', 'diocese', 'academicYear', 'minimumAttendancePercent',
+          'pastorName', 'coordinatorName', 'contactEmail', 'contactPhone',
+          'autoNotifyLingkungan', 'requireSponsorVerification', 'updatedAt'
+        ]);
+
+      allow delete: if false;
+    }
+
+    // 7. NOTIFICATIONS
+    match /notifications/{notificationId} {
+      allow get: if isVerified() && isValidId(notificationId) && (
+        isParishStaff() || ('recipientUid' in existing() && existing().recipientUid == request.auth.uid) || 'general' in existing().roles
+      );
+      allow list: if isVerified() && (
+        isParishStaff() || ('recipientUid' in existing() && existing().recipientUid == request.auth.uid) || 'general' in existing().roles
+      );
+
+      allow create: if isVerified() &&
+        isValidId(notificationId) &&
+        isValidNotification(incoming()) &&
+        incoming().createdAt == request.time &&
+        isParishStaff();
+
+      allow update: if isVerified() &&
+        isValidId(notificationId) &&
+        isValidNotification(incoming()) &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['read']) &&
+        (
+          isParishStaff() ||
+          ('recipientUid' in existing() && existing().recipientUid == request.auth.uid) ||
+          'general' in existing().roles
+        );
+
+      allow delete: if isVerified() && isValidId(notificationId) && isAdmin();
+    }
+
+    // 8. PUBLIC FRONTPAGE CMS CONTENT (/publicContent/frontpage)
+    // Intentionally public read (no PII); writes strictly limited to verified parish staff writers
+    match /publicContent/{docId} {
+      allow get: if isValidId(docId) && docId == 'frontpage';
+      allow list: if false;
+
+      allow create: if isVerified() &&
+        isValidId(docId) &&
+        docId == 'frontpage' &&
+        isValidFrontpageContent(incoming()) &&
+        incoming().updatedAt == request.time &&
+        isStaffWriter();
+
+      allow update: if isVerified() &&
+        isValidId(docId) &&
+        docId == 'frontpage' &&
+        isValidFrontpageContent(incoming()) &&
+        incoming().updatedAt == request.time &&
+        isStaffWriter() &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'parishLabel', 'heroTitle', 'heroSubtitle', 'heroPrimaryCtaLabel', 'heroSecondaryCtaLabel',
+          'showScriptureSection', 'scriptureHeading', 'scriptureQuote', 'scriptureSource', 'scriptureNote',
+          'programsEyebrow', 'programsHeading', 'programsSubtitle',
+          'showRolesSection', 'rolesHeading', 'rolesSubtitle', 'roleHighlights',
+          'aboutTitle', 'aboutContent', 'aboutHighlights',
+          'guideTitle', 'guideIntro', 'guideSteps', 'showFaqSection', 'faqs',
+          'contactTitle', 'contactDescription', 'contactAddress', 'contactHours', 'contactEmail', 'contactPhone',
+          'footerTagline', 'footerCopyright', 'updatedAt'
+        ]);
+
+      allow delete: if false;
+    }
+
+    // 9. PUBLIC CATECHESIS PROGRAMS CATALOG (/publicPrograms/{programId})
+    // Published programs are publicly readable; drafts and mutations restricted to verified parish staff writers
+    match /publicPrograms/{programId} {
+      allow get: if isValidId(programId) && (existing().published == true || isStaffWriter());
+      allow list: if existing().published == true || isStaffWriter();
+
+      allow create: if isVerified() &&
+        isValidId(programId) &&
+        isValidPublicProgram(incoming()) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        isStaffWriter();
+
+      allow update: if isVerified() &&
+        isValidId(programId) &&
+        isValidPublicProgram(incoming()) &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        isStaffWriter() &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'name', 'iconType', 'audience', 'mode', 'scheduleSummary', 'status',
+          'summary', 'overview', 'learnItems', 'requirements', 'documents',
+          'policyNote', 'linkedProgram', 'published', 'displayOrder', 'updatedAt'
+        ]);
+
+      allow delete: if isVerified() && isValidId(programId) && isStaffWriter();
+    }
+  }
+}

@@ -1,0 +1,75 @@
+name: Deploy Catevia to Hostinger Web Hosting
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hostinger-deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    name: Build Vite App & Deploy via FTPS
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: TypeScript type check
+        run: npm run lint
+
+      - name: Build production bundle
+        run: npm run build
+        env:
+          # Optional: override base path if deployed to a subfolder (e.g. /catevia/)
+          VITE_BASE_PATH: ${{ vars.VITE_BASE_PATH || '/' }}
+          # Optional: override bootstrapped admin email for production parish
+          VITE_ADMIN_EMAIL: ${{ vars.VITE_ADMIN_EMAIL || '' }}
+          # Optional: override Firebase project config (defaults to firebase-applet-config.json)
+          VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
+          VITE_FIREBASE_AUTH_DOMAIN: ${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}
+          VITE_FIREBASE_PROJECT_ID: ${{ secrets.VITE_FIREBASE_PROJECT_ID }}
+          VITE_FIREBASE_STORAGE_BUCKET: ${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}
+          VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}
+          VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
+          VITE_FIREBASE_DATABASE_ID: ${{ secrets.VITE_FIREBASE_DATABASE_ID }}
+
+      - name: Verify build output & .htaccess
+        run: |
+          test -f dist/index.html
+          test -f dist/.htaccess
+          ls -la dist
+
+      - name: Deploy dist/ to Hostinger via FTPS
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.HOSTINGER_FTP_SERVER }}
+          username: ${{ secrets.HOSTINGER_FTP_USERNAME }}
+          password: ${{ secrets.HOSTINGER_FTP_PASSWORD }}
+          port: ${{ vars.HOSTINGER_FTP_PORT || 21 }}
+          protocol: ftps
+          local-dir: ./dist/
+          server-dir: ${{ vars.HOSTINGER_SERVER_DIR || './public_html/' }}
+          dangerous-clean-slate: false
+          exclude: |
+            **/.git*
+            **/.git*/**
+            **/node_modules/**
+            .well-known/**
+            cgi-bin/**

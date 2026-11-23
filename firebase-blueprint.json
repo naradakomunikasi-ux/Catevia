@@ -1,0 +1,712 @@
+{
+  "entities": {
+    "SystemUser": {
+      "title": "SystemUser",
+      "description": "Authenticated user account and RBAC role assignment in Catevia.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "minLength": 3,
+          "maxLength": 160
+        },
+        "role": {
+          "type": "string",
+          "enum": ["admin", "operational", "approver", "general"]
+        },
+        "lingkungan": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "active": {
+          "type": "boolean"
+        },
+        "lastActive": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["uid", "name", "email", "role", "lingkungan", "active", "lastActive", "createdAt", "updatedAt"]
+    },
+    "MaterialProgress": {
+      "title": "MaterialProgress",
+      "description": "Tracks whether a user has completed reading a specific study material.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "materialId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "completed": {
+          "type": "boolean"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["userId", "materialId", "completed", "updatedAt"]
+    },
+    "Participant": {
+      "title": "Participant",
+      "description": "Catechesis participant / sacrament candidate record.",
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 32,
+          "pattern": "^[A-Z0-9\\-]+$"
+        },
+        "fullName": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 120
+        },
+        "birthDate": {
+          "type": "string",
+          "minLength": 8,
+          "maxLength": 20
+        },
+        "phone": {
+          "type": "string",
+          "minLength": 6,
+          "maxLength": 30
+        },
+        "email": {
+          "type": "string",
+          "maxLength": 160
+        },
+        "lingkungan": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 80
+        },
+        "program": {
+          "type": "string",
+          "enum": ["Katekumen (Baptis Dewasa)", "Komuni Pertama", "Krisma (Penguatan)"]
+        },
+        "classId": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 64,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "sponsorName": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 120
+        },
+        "status": {
+          "type": "string",
+          "enum": ["Aktif", "Menunggu Verifikasi", "Perlu Revisi", "Siap Sakramen", "Selesai"]
+        },
+        "attendanceCount": {
+          "type": "integer"
+        },
+        "totalSessions": {
+          "type": "integer"
+        },
+        "registeredAt": {
+          "type": "string",
+          "minLength": 8,
+          "maxLength": 20
+        },
+        "ownerUid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "documents": {
+          "type": "object",
+          "description": "Checklist of required administrative documents (ktpKk, suratBaptisAtauRekomendasi, pasFoto)."
+        },
+        "notes": {
+          "type": "string",
+          "maxLength": 600
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "code",
+        "fullName",
+        "birthDate",
+        "phone",
+        "email",
+        "lingkungan",
+        "program",
+        "classId",
+        "sponsorName",
+        "status",
+        "attendanceCount",
+        "totalSessions",
+        "registeredAt",
+        "ownerUid",
+        "documents",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "ParticipantAttachment": {
+      "title": "ParticipantAttachment",
+      "description": "Uploaded verification document metadata and bounded preview payload for a participant.",
+      "type": "object",
+      "properties": {
+        "participantId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "docType": {
+          "type": "string",
+          "enum": ["ktpKk", "suratBaptisAtauRekomendasi", "pasFoto"]
+        },
+        "fileName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "mimeType": {
+          "type": "string",
+          "enum": ["image/jpeg", "image/png", "image/webp", "application/pdf"]
+        },
+        "fileSizeBytes": {
+          "type": "integer"
+        },
+        "previewDataUrl": {
+          "type": "string",
+          "maxLength": 180000
+        },
+        "uploadedByUid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "uploadedByName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "uploadedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "participantId",
+        "docType",
+        "fileName",
+        "mimeType",
+        "fileSizeBytes",
+        "uploadedByUid",
+        "uploadedByName",
+        "uploadedAt"
+      ]
+    },
+    "CatechesisClass": {
+      "title": "CatechesisClass",
+      "description": "Catechesis class schedule and bounded session attendance list.",
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 32,
+          "pattern": "^[A-Z0-9\\-]+$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 140
+        },
+        "program": {
+          "type": "string",
+          "enum": ["Katekumen (Baptis Dewasa)", "Komuni Pertama", "Krisma (Penguatan)"]
+        },
+        "catechistName": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 120
+        },
+        "scheduleDay": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 20
+        },
+        "scheduleTime": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 40
+        },
+        "room": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 100
+        },
+        "capacity": {
+          "type": "integer"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["Aktif", "Selesai", "Dijadwalkan"]
+        },
+        "sessions": {
+          "type": "array",
+          "description": "Bounded list of class sessions (max 50)."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "code",
+        "name",
+        "program",
+        "catechistName",
+        "scheduleDay",
+        "scheduleTime",
+        "room",
+        "capacity",
+        "status",
+        "sessions",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "ApprovalRequest": {
+      "title": "ApprovalRequest",
+      "description": "Sacrament readiness or registration document approval workflow record.",
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 32,
+          "pattern": "^[A-Z0-9\\-]+$"
+        },
+        "participantId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "participantName": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 120
+        },
+        "program": {
+          "type": "string",
+          "enum": ["Katekumen (Baptis Dewasa)", "Komuni Pertama", "Krisma (Penguatan)"]
+        },
+        "lingkungan": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 80
+        },
+        "requestType": {
+          "type": "string",
+          "enum": ["Kelayakan Penerimaan Sakramen", "Verifikasi Berkas Pendaftaran", "Perpindahan Kelas"]
+        },
+        "submittedBy": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 120
+        },
+        "submittedByUid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "submittedAt": {
+          "type": "string",
+          "minLength": 8,
+          "maxLength": 20
+        },
+        "status": {
+          "type": "string",
+          "enum": ["Menunggu", "Disetujui", "Perlu Revisi", "Ditolak"]
+        },
+        "attendanceSummary": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 120
+        },
+        "documentsComplete": {
+          "type": "boolean"
+        },
+        "summaryNote": {
+          "type": "string",
+          "maxLength": 600
+        },
+        "decisionNote": {
+          "type": "string",
+          "maxLength": 600
+        },
+        "decidedAt": {
+          "type": "string",
+          "maxLength": 24
+        },
+        "decidedBy": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "history": {
+          "type": "array",
+          "description": "Bounded approval audit history (max 25 entries)."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "code",
+        "participantId",
+        "participantName",
+        "program",
+        "lingkungan",
+        "requestType",
+        "submittedBy",
+        "submittedByUid",
+        "submittedAt",
+        "status",
+        "attendanceSummary",
+        "documentsComplete",
+        "summaryNote",
+        "history",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "StudyMaterial": {
+      "title": "StudyMaterial",
+      "description": "Faith formation curriculum module.",
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 160
+        },
+        "program": {
+          "type": "string",
+          "enum": ["Katekumen (Baptis Dewasa)", "Komuni Pertama", "Krisma (Penguatan)", "Semua Program"]
+        },
+        "sessionNumber": {
+          "type": "integer"
+        },
+        "durationMinutes": {
+          "type": "integer"
+        },
+        "author": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 120
+        },
+        "updatedAt": {
+          "type": "string",
+          "minLength": 8,
+          "maxLength": 24
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 5,
+          "maxLength": 1000
+        },
+        "keyPoints": {
+          "type": "array",
+          "description": "Bounded array of discussion key points (max 20)."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["title", "program", "sessionNumber", "durationMinutes", "author", "updatedAt", "summary", "keyPoints", "createdAt"]
+    },
+    "ParishSettings": {
+      "title": "ParishSettings",
+      "description": "Parish configuration and sacrament eligibility thresholds.",
+      "type": "object",
+      "properties": {
+        "parishName": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 120
+        },
+        "diocese": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 120
+        },
+        "academicYear": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 80
+        },
+        "minimumAttendancePercent": {
+          "type": "integer"
+        },
+        "pastorName": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 120
+        },
+        "coordinatorName": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 120
+        },
+        "contactEmail": {
+          "type": "string",
+          "format": "email",
+          "maxLength": 160
+        },
+        "contactPhone": {
+          "type": "string",
+          "maxLength": 40
+        },
+        "autoNotifyLingkungan": {
+          "type": "boolean"
+        },
+        "requireSponsorVerification": {
+          "type": "boolean"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "parishName",
+        "diocese",
+        "academicYear",
+        "minimumAttendancePercent",
+        "pastorName",
+        "coordinatorName",
+        "contactEmail",
+        "contactPhone",
+        "autoNotifyLingkungan",
+        "requireSponsorVerification",
+        "updatedAt"
+      ]
+    },
+    "AppNotification": {
+      "title": "AppNotification",
+      "description": "Role-targeted parish notification record.",
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 160
+        },
+        "description": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 400
+        },
+        "timeLabel": {
+          "type": "string",
+          "maxLength": 40
+        },
+        "read": {
+          "type": "boolean"
+        },
+        "targetPage": {
+          "type": "string",
+          "enum": ["dashboard", "participants", "classes", "materials", "approvals", "reports", "cms", "users", "settings"]
+        },
+        "roles": {
+          "type": "array",
+          "description": "Bounded list of target roles (max 4)."
+        },
+        "recipientUid": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["title", "description", "timeLabel", "read", "targetPage", "roles", "createdAt"]
+    },
+    "FrontpageContent": {
+      "title": "FrontpageContent",
+      "description": "Publicly readable CMS configuration for the Catevia parish website frontpage, about, guide, FAQ, and contact sections.",
+      "type": "object",
+      "properties": {
+        "parishLabel": { "type": "string", "minLength": 2, "maxLength": 120 },
+        "heroTitle": { "type": "string", "minLength": 4, "maxLength": 160 },
+        "heroSubtitle": { "type": "string", "minLength": 10, "maxLength": 500 },
+        "heroPrimaryCtaLabel": { "type": "string", "minLength": 2, "maxLength": 60 },
+        "heroSecondaryCtaLabel": { "type": "string", "minLength": 2, "maxLength": 60 },
+        "showScriptureSection": { "type": "boolean" },
+        "scriptureHeading": { "type": "string", "maxLength": 100 },
+        "scriptureQuote": { "type": "string", "maxLength": 500 },
+        "scriptureSource": { "type": "string", "maxLength": 100 },
+        "scriptureNote": { "type": "string", "maxLength": 300 },
+        "programsEyebrow": { "type": "string", "minLength": 2, "maxLength": 80 },
+        "programsHeading": { "type": "string", "minLength": 2, "maxLength": 140 },
+        "programsSubtitle": { "type": "string", "maxLength": 300 },
+        "showRolesSection": { "type": "boolean" },
+        "rolesHeading": { "type": "string", "maxLength": 120 },
+        "rolesSubtitle": { "type": "string", "maxLength": 300 },
+        "roleHighlights": { "type": "array", "description": "Bounded list of parish role highlights (max 8)." },
+        "aboutTitle": { "type": "string", "minLength": 2, "maxLength": 160 },
+        "aboutContent": { "type": "string", "minLength": 10, "maxLength": 2000 },
+        "aboutHighlights": { "type": "array", "description": "Bounded list of about bullet points (max 12)." },
+        "guideTitle": { "type": "string", "minLength": 2, "maxLength": 160 },
+        "guideIntro": { "type": "string", "maxLength": 500 },
+        "guideSteps": { "type": "array", "description": "Bounded list of registration steps (max 10)." },
+        "showFaqSection": { "type": "boolean" },
+        "faqs": { "type": "array", "description": "Bounded list of FAQ items (max 20)." },
+        "contactTitle": { "type": "string", "minLength": 2, "maxLength": 140 },
+        "contactDescription": { "type": "string", "maxLength": 500 },
+        "contactAddress": { "type": "string", "maxLength": 300 },
+        "contactHours": { "type": "string", "maxLength": 200 },
+        "contactEmail": { "type": "string", "maxLength": 160 },
+        "contactPhone": { "type": "string", "maxLength": 100 },
+        "footerTagline": { "type": "string", "maxLength": 180 },
+        "footerCopyright": { "type": "string", "maxLength": 180 },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "parishLabel", "heroTitle", "heroSubtitle", "heroPrimaryCtaLabel", "heroSecondaryCtaLabel",
+        "showScriptureSection", "scriptureHeading", "scriptureQuote", "scriptureSource", "scriptureNote",
+        "programsEyebrow", "programsHeading", "programsSubtitle",
+        "showRolesSection", "rolesHeading", "rolesSubtitle", "roleHighlights",
+        "aboutTitle", "aboutContent", "aboutHighlights",
+        "guideTitle", "guideIntro", "guideSteps", "showFaqSection", "faqs",
+        "contactTitle", "contactDescription", "contactAddress", "contactHours", "contactEmail", "contactPhone",
+        "footerTagline", "footerCopyright", "updatedAt"
+      ]
+    },
+    "PublicProgram": {
+      "title": "PublicProgram",
+      "description": "Publicly visible catechesis program catalog entry managed from the CMS.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "minLength": 2, "maxLength": 140 },
+        "iconType": { "type": "string", "enum": ["baptis", "ekaristi", "krisma", "persink", "umum"] },
+        "audience": { "type": "string", "minLength": 2, "maxLength": 140 },
+        "mode": { "type": "string", "minLength": 2, "maxLength": 120 },
+        "scheduleSummary": { "type": "string", "maxLength": 180 },
+        "status": { "type": "string", "enum": ["Pendaftaran Dibuka", "Akan Dibuka", "Ditutup"] },
+        "summary": { "type": "string", "minLength": 5, "maxLength": 300 },
+        "overview": { "type": "string", "minLength": 10, "maxLength": 1200 },
+        "learnItems": { "type": "array", "description": "Bounded list of learning topics (max 12)." },
+        "requirements": { "type": "array", "description": "Bounded list of eligibility requirements (max 12)." },
+        "documents": { "type": "array", "description": "Bounded list of required documents (max 12)." },
+        "policyNote": { "type": "string", "maxLength": 500 },
+        "linkedProgram": { "type": "string", "enum": ["", "Katekumen (Baptis Dewasa)", "Komuni Pertama", "Krisma (Penguatan)"] },
+        "published": { "type": "boolean" },
+        "displayOrder": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "name", "iconType", "audience", "mode", "scheduleSummary", "status",
+        "summary", "overview", "learnItems", "requirements", "documents",
+        "policyNote", "linkedProgram", "published", "displayOrder", "createdAt", "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/SystemUser" },
+      "description": "User accounts and RBAC roles. Contains PII (email); read restricted to owner or admin."
+    },
+    "/users/{userId}/progress/{materialId}": {
+      "schema": { "$ref": "#/entities/MaterialProgress" },
+      "description": "Per-user reading completion progress for study materials."
+    },
+    "/participants/{participantId}": {
+      "schema": { "$ref": "#/entities/Participant" },
+      "description": "Sacrament candidate records with PII isolated to staff (admin/operational/approver) or owning participant."
+    },
+    "/participants/{participantId}/attachments/{docType}": {
+      "schema": { "$ref": "#/entities/ParticipantAttachment" },
+      "description": "Uploaded verification documents (KTP/KK, Surat Baptis/Rekomendasi, Pas Foto 3x4) bounded in size."
+    },
+    "/classes/{classId}": {
+      "schema": { "$ref": "#/entities/CatechesisClass" },
+      "description": "Active catechesis classes and session attendance logs."
+    },
+    "/approvals/{approvalId}": {
+      "schema": { "$ref": "#/entities/ApprovalRequest" },
+      "description": "Pastor Paroki and Secretariat sacrament verification requests and audit trails."
+    },
+    "/materials/{materialId}": {
+      "schema": { "$ref": "#/entities/StudyMaterial" },
+      "description": "Shared faith formation study guides and curriculum modules."
+    },
+    "/settings/{settingId}": {
+      "schema": { "$ref": "#/entities/ParishSettings" },
+      "description": "Global parish configuration document (/settings/parish)."
+    },
+    "/notifications/{notificationId}": {
+      "schema": { "$ref": "#/entities/AppNotification" },
+      "description": "Operational and personal alerts routed by role or recipient."
+    },
+    "/publicContent/{docId}": {
+      "schema": { "$ref": "#/entities/FrontpageContent" },
+      "description": "Publicly readable website CMS configuration (/publicContent/frontpage); writes restricted to staff writers."
+    },
+    "/publicPrograms/{programId}": {
+      "schema": { "$ref": "#/entities/PublicProgram" },
+      "description": "Publicly readable catalog of published catechesis programs; drafts and writes restricted to staff writers."
+    }
+  }
+}
