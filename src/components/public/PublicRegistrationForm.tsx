@@ -3,7 +3,10 @@ import {
   ArrowRight,
   CalendarDays,
   CheckCircle2,
+  Eye,
+  EyeOff,
   FileText,
+  Lock,
   Mail,
   Phone,
   ShieldCheck,
@@ -23,6 +26,12 @@ import {
   prepareDocumentUpload,
 } from '../../utils/documentUpload';
 import { useApp } from '../../context/AppContext';
+import {
+  formatLoginIdentifier,
+  isReservedUsername,
+  isValidLoginIdentifier,
+  resolveLoginEmail,
+} from '../../firebase';
 import { Button } from '../ui/Button';
 import { SearchableSelect, SelectField, Textarea, TextInput } from '../ui/Input';
 
@@ -82,6 +91,11 @@ export const PublicRegistrationForm: React.FC<PublicRegistrationFormProps> = ({
   const [lingkungan, setLingkungan] = useState('');
   const [sponsorName, setSponsorName] = useState('');
   const [notes, setNotes] = useState('');
+  const [accountMode, setAccountMode] = useState<'register' | 'login'>('register');
+  const [accountIdentifier, setAccountIdentifier] = useState('');
+  const [accountPassword, setAccountPassword] = useState('');
+  const [accountConfirmPassword, setAccountConfirmPassword] = useState('');
+  const [showAccountPassword, setShowAccountPassword] = useState(false);
   const [pendingFiles, setPendingFiles] = useState<
     Partial<Record<DocumentTypeKey, PendingUploadFile>>
   >({});
@@ -97,7 +111,7 @@ export const PublicRegistrationForm: React.FC<PublicRegistrationFormProps> = ({
     }
   }, [preselectedProgram]);
 
-  // Gently pre-fill identity from signed-in Google account if user hasn't typed anything yet
+  // Gently pre-fill identity from signed-in account if user hasn't typed anything yet
   useEffect(() => {
     if (!currentUser || hasUserEditedIdentity || role !== 'general') return;
     if (!fullName) {
@@ -190,6 +204,27 @@ export const PublicRegistrationForm: React.FC<PublicRegistrationFormProps> = ({
       nextErrors.sponsorName = 'Masukkan nama wali baptis/krisma atau orang tua minimal 2 karakter.';
     }
 
+    if (!currentUser) {
+      const effectiveIdentifier = (accountIdentifier.trim() || email.trim()).toLowerCase();
+      if (!isValidLoginIdentifier(effectiveIdentifier)) {
+        nextErrors.accountIdentifier =
+          'Masukkan username (min. 3 karakter) atau alamat email yang valid untuk akun portal.';
+      } else if (accountMode === 'register' && isReservedUsername(effectiveIdentifier)) {
+        nextErrors.accountIdentifier =
+          'Username tersebut khusus pengurus paroki. Gunakan username atau email lain.';
+      }
+      if (accountMode === 'register') {
+        if (accountPassword.length < 8) {
+          nextErrors.accountPassword = 'Kata sandi akun minimal 8 karakter.';
+        }
+        if (accountPassword !== accountConfirmPassword) {
+          nextErrors.accountConfirmPassword = 'Konfirmasi kata sandi tidak cocok.';
+        }
+      } else if (accountPassword.length < 6) {
+        nextErrors.accountPassword = 'Masukkan kata sandi akun Anda (minimal 6 karakter).';
+      }
+    }
+
     setErrors(nextErrors);
     return Object.keys(nextErrors).length === 0;
   };
@@ -202,6 +237,9 @@ export const PublicRegistrationForm: React.FC<PublicRegistrationFormProps> = ({
     setLingkungan('');
     setSponsorName('');
     setNotes('');
+    setAccountIdentifier('');
+    setAccountPassword('');
+    setAccountConfirmPassword('');
     setPendingFiles({});
     setErrors({});
     setHasUserEditedIdentity(true);
@@ -225,6 +263,8 @@ export const PublicRegistrationForm: React.FC<PublicRegistrationFormProps> = ({
       pasFoto: Boolean(pendingFiles.pasFoto),
     };
 
+    const effectiveIdentifier = (accountIdentifier.trim() || email.trim()).toLowerCase();
+
     const result = await submitFrontpageRegistration(
       {
         fullName: fullName.trim(),
@@ -238,7 +278,14 @@ export const PublicRegistrationForm: React.FC<PublicRegistrationFormProps> = ({
         documents: docsFlags,
         notes: notes.trim() || undefined,
       },
-      uploads
+      uploads,
+      currentUser
+        ? undefined
+        : {
+            mode: accountMode,
+            identifier: effectiveIdentifier,
+            password: accountPassword,
+          }
     );
 
     if (result) {
@@ -576,6 +623,156 @@ export const PublicRegistrationForm: React.FC<PublicRegistrationFormProps> = ({
             />
           </div>
 
+          {/* Section 4: Account Credentials for Public Visitors */}
+          {!currentUser && (
+            <div className="pt-6 border-t border-[#EEF1F6] space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <p className="text-[12px] font-semibold uppercase tracking-[0.06em] text-[#855E1E]">
+                    04 · Akun Portal Peserta
+                  </p>
+                  <p className="text-[13px] text-[#5B687A] mt-0.5">
+                    Digunakan untuk masuk ke Portal Peserta dan memantau status berkas serta jadwal kelas.
+                  </p>
+                </div>
+                <div className="inline-grid grid-cols-2 p-1 rounded-[8px] bg-[#F2F5FA] border border-[#E2E7EF] shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAccountMode('register');
+                      clearFieldError('accountPassword');
+                      clearFieldError('accountConfirmPassword');
+                    }}
+                    className={`px-3 min-h-[34px] text-[12px] font-semibold rounded-[6px] transition-colors cursor-pointer ${
+                      accountMode === 'register'
+                        ? 'bg-white text-[#082340] shadow-[0_1px_2px_rgba(8,35,64,0.08)]'
+                        : 'text-[#5B687A] hover:text-[#0D1B2A]'
+                    }`}
+                  >
+                    Buat Akun Baru
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAccountMode('login');
+                      clearFieldError('accountPassword');
+                      clearFieldError('accountConfirmPassword');
+                    }}
+                    className={`px-3 min-h-[34px] text-[12px] font-semibold rounded-[6px] transition-colors cursor-pointer ${
+                      accountMode === 'login'
+                        ? 'bg-white text-[#082340] shadow-[0_1px_2px_rgba(8,35,64,0.08)]'
+                        : 'text-[#5B687A] hover:text-[#0D1B2A]'
+                    }`}
+                  >
+                    Sudah Punya Akun
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="sm:col-span-2">
+                  <TextInput
+                    label="Username atau Email Akun"
+                    value={accountIdentifier}
+                    onChange={(e) => {
+                      setAccountIdentifier(e.target.value);
+                      clearFieldError('accountIdentifier');
+                    }}
+                    placeholder={
+                      email.trim()
+                        ? `Kosongkan untuk memakai ${email.trim()}`
+                        : 'Contoh: clara.novita atau alamat email Anda'
+                    }
+                    hint={
+                      accountIdentifier.trim() && !accountIdentifier.includes('@')
+                        ? `ID login sistem: ${resolveLoginEmail(accountIdentifier)}`
+                        : 'Jika dikosongkan, sistem akan otomatis memakai alamat email di atas.'
+                    }
+                    error={errors.accountIdentifier}
+                  />
+                </div>
+
+                <div>
+                  <label
+                    htmlFor="reg-account-password"
+                    className="block text-[13px] font-medium text-[#0D1B2A] mb-1.5"
+                  >
+                    Kata Sandi Akun <span className="text-[#B42318]">*</span>
+                  </label>
+                  <div className="relative">
+                    <Lock
+                      className="w-4 h-4 text-[#69778A] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
+                      aria-hidden="true"
+                    />
+                    <input
+                      id="reg-account-password"
+                      type={showAccountPassword ? 'text' : 'password'}
+                      autoComplete={accountMode === 'register' ? 'new-password' : 'current-password'}
+                      value={accountPassword}
+                      onChange={(e) => {
+                        setAccountPassword(e.target.value);
+                        clearFieldError('accountPassword');
+                      }}
+                      placeholder={
+                        accountMode === 'register' ? 'Minimal 8 karakter' : 'Masukkan kata sandi Anda'
+                      }
+                      className="w-full min-h-[40px] pl-9 pr-11 py-2 text-[14px] text-[#0D1B2A] bg-white border border-[#CBD4E1] rounded-[8px] focus:outline-none focus:ring-2 focus:ring-[#082340]/20 focus:border-[#082340]"
+                    />
+                    <button
+                      type="button"
+                      aria-label={showAccountPassword ? 'Sembunyikan kata sandi' : 'Tampilkan kata sandi'}
+                      onClick={() => setShowAccountPassword((prev) => !prev)}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center rounded-[6px] text-[#5B687A] hover:text-[#082340] cursor-pointer"
+                    >
+                      {showAccountPassword ? (
+                        <EyeOff className="w-4 h-4" />
+                      ) : (
+                        <Eye className="w-4 h-4" />
+                      )}
+                    </button>
+                  </div>
+                  {errors.accountPassword && (
+                    <p className="mt-1 text-[12px] text-[#B42318]">{errors.accountPassword}</p>
+                  )}
+                </div>
+
+                {accountMode === 'register' && (
+                  <div>
+                    <label
+                      htmlFor="reg-account-confirm-password"
+                      className="block text-[13px] font-medium text-[#0D1B2A] mb-1.5"
+                    >
+                      Konfirmasi Kata Sandi <span className="text-[#B42318]">*</span>
+                    </label>
+                    <div className="relative">
+                      <Lock
+                        className="w-4 h-4 text-[#69778A] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
+                        aria-hidden="true"
+                      />
+                      <input
+                        id="reg-account-confirm-password"
+                        type={showAccountPassword ? 'text' : 'password'}
+                        autoComplete="new-password"
+                        value={accountConfirmPassword}
+                        onChange={(e) => {
+                          setAccountConfirmPassword(e.target.value);
+                          clearFieldError('accountConfirmPassword');
+                        }}
+                        placeholder="Ketik ulang kata sandi"
+                        className="w-full min-h-[40px] pl-9 pr-3 py-2 text-[14px] text-[#0D1B2A] bg-white border border-[#CBD4E1] rounded-[8px] focus:outline-none focus:ring-2 focus:ring-[#082340]/20 focus:border-[#082340]"
+                      />
+                    </div>
+                    {errors.accountConfirmPassword && (
+                      <p className="mt-1 text-[12px] text-[#B42318]">
+                        {errors.accountConfirmPassword}
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Submit Footer */}
           <div className="pt-6 border-t border-[#EEF1F6] flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div className="flex items-start gap-2.5 text-[12px] text-[#5B687A] max-w-md">
@@ -586,14 +783,16 @@ export const PublicRegistrationForm: React.FC<PublicRegistrationFormProps> = ({
               <span>
                 {currentUser ? (
                   <>
-                    Mendaftar dengan akun terverifikasi{' '}
-                    <strong className="font-medium text-[#0D1B2A]">{currentUser.email}</strong>.
-                    Data tersimpan aman di sistem Paroki.
+                    Mendaftar dengan akun{' '}
+                    <strong className="font-medium text-[#0D1B2A]">
+                      {formatLoginIdentifier(currentUser.email || '')}
+                    </strong>
+                    . Data tersimpan aman di sistem Paroki.
                   </>
                 ) : (
                   <>
-                    Saat dikirim, Anda akan diminta verifikasi singkat dengan akun Google agar data
-                    terlindungi dan Anda dapat memantau status di Portal Peserta.
+                    Akun portal Anda langsung aktif saat formulir dikirim sehingga Anda dapat
+                    memantau jadwal kelas dan status verifikasi berkas kapan saja.
                   </>
                 )}
               </span>
@@ -608,7 +807,9 @@ export const PublicRegistrationForm: React.FC<PublicRegistrationFormProps> = ({
               <span>
                 {currentUser
                   ? 'Kirim Pendaftaran Katekese'
-                  : 'Verifikasi Google & Kirim Pendaftaran'}
+                  : accountMode === 'register'
+                    ? 'Buat Akun & Kirim Pendaftaran'
+                    : 'Masuk & Kirim Pendaftaran'}
               </span>
               <ArrowRight className="w-4 h-4" aria-hidden="true" />
             </Button>

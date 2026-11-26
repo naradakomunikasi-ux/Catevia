@@ -30,11 +30,14 @@ const AppShell: React.FC = () => {
     currentUser,
     isAccountDeactivated,
     fatalFirestoreError,
-    signInWithGoogle,
+    signInWithCredentials,
+    registerWithCredentials,
+    clearAuthError,
     signOut,
     isSeedingData,
     siteMode,
     openPublicWebsite,
+    frontpageContent,
     role,
     activePage,
   } = useApp();
@@ -71,8 +74,11 @@ const AppShell: React.FC = () => {
     return (
       <>
         <LoginScreen
-          onSignIn={signInWithGoogle}
+          onSignIn={signInWithCredentials}
+          onRegister={registerWithCredentials}
+          onClearError={clearAuthError}
           onBackToPublic={openPublicWebsite}
+          parishLabel={frontpageContent.parishLabel}
           loading={authLoading}
           error={authError}
         />

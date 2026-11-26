@@ -347,7 +347,7 @@ export const PublicWebsitePage: React.FC = () => {
                   else openLoginScreen();
                 }}
               >
-                {currentUser ? 'Buka Portal Catevia' : 'Masuk dengan Google'}
+                {currentUser ? 'Buka Portal Catevia' : 'Masuk Portal Catevia'}
               </Button>
             </div>
           </div>

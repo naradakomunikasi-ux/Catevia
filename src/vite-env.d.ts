@@ -3,6 +3,7 @@
 interface ImportMetaEnv {
   readonly VITE_BASE_PATH?: string;
   readonly VITE_ADMIN_EMAIL?: string;
+  readonly VITE_AUTH_USERNAME_DOMAIN?: string;
   readonly VITE_FIREBASE_API_KEY?: string;
   readonly VITE_FIREBASE_AUTH_DOMAIN?: string;
   readonly VITE_FIREBASE_PROJECT_ID?: string;

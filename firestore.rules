@@ -15,7 +15,10 @@ service cloud.firestore {
     }
 
     function isVerified() {
-      return isSignedIn() && request.auth.token.email_verified == true;
+      return isSignedIn() && (
+        request.auth.token.email_verified == true ||
+        request.auth.token.firebase.sign_in_provider == 'password'
+      );
     }
 
     function isValidId(id) {
@@ -35,7 +38,10 @@ service cloud.firestore {
     }
 
     function isBootstrappedAdmin() {
-      return isVerified() && request.auth.token.email == 'michael.gani@gmail.com';
+      return isSignedIn() && (
+        (request.auth.token.email_verified == true && request.auth.token.email == 'michael.gani@gmail.com') ||
+        (request.auth.token.firebase.sign_in_provider == 'password' && request.auth.token.email == 'admin@catevia.paroki')
+      );
     }
 
     function userProfileExists() {

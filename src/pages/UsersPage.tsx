@@ -1,8 +1,13 @@
 import React, { useState } from 'react';
-import { Plus, ShieldCheck } from 'lucide-react';
+import { Eye, EyeOff, Plus, ShieldCheck } from 'lucide-react';
 import { UserRole } from '../types/catevia';
 import { ROLE_PROFILES } from '../data/permissions';
 import { LINGKUNGAN_OPTIONS } from '../data/seedData';
+import {
+  formatLoginIdentifier,
+  isValidLoginIdentifier,
+  resolveLoginEmail,
+} from '../firebase';
 import { useApp } from '../context/AppContext';
 import { Button } from '../components/ui/Button';
 import { StatusIndicator } from '../components/ui/StatusIndicator';
@@ -14,7 +19,9 @@ export const UsersPage: React.FC = () => {
 
   const [addOpen, setAddOpen] = useState(false);
   const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
+  const [identifier, setIdentifier] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [userRole, setUserRole] = useState<UserRole>('operational');
   const [lingkungan, setLingkungan] = useState(LINGKUNGAN_OPTIONS[0]);
   const [error, setError] = useState('');
@@ -25,13 +32,21 @@ export const UsersPage: React.FC = () => {
 
   const handleAddUser = async (e: React.FormEvent) => {
     e.preventDefault();
-    const cleanEmail = email.trim().toLowerCase();
-    if (name.trim().length < 2 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
-      setError('Masukkan nama lengkap (min. 2 karakter) dan alamat email yang valid.');
+    if (name.trim().length < 2) {
+      setError('Masukkan nama lengkap minimal 2 karakter.');
       return;
     }
+    if (!isValidLoginIdentifier(identifier)) {
+      setError('Masukkan username (huruf/angka, min. 3 karakter) atau alamat email yang valid.');
+      return;
+    }
+    if (password.length < 8) {
+      setError('Kata sandi akun minimal 8 karakter.');
+      return;
+    }
+    const cleanEmail = resolveLoginEmail(identifier);
     if (users.some((u) => u.email.trim().toLowerCase() === cleanEmail)) {
-      setError('Alamat email tersebut sudah terdaftar di direktori pengguna Catevia.');
+      setError('Username atau email tersebut sudah terdaftar di direktori pengguna Catevia.');
       return;
     }
     setSaving(true);
@@ -39,15 +54,20 @@ export const UsersPage: React.FC = () => {
       await addUser({
         name: name.trim(),
         email: cleanEmail,
+        password,
         role: userRole,
         lingkungan,
         active: true,
       });
       setName('');
-      setEmail('');
+      setIdentifier('');
+      setPassword('');
+      setShowPassword(false);
       setUserRole('operational');
       setError('');
       setAddOpen(false);
+    } catch {
+      // Error toast already displayed by addUser
     } finally {
       setSaving(false);
     }
@@ -104,7 +124,14 @@ export const UsersPage: React.FC = () => {
                           </span>
                         )}
                       </div>
-                      <div className="text-[12px] text-[#5B687A]">{u.email}</div>
+                      <div className="text-[12px] text-[#5B687A]">
+                        <span className="font-mono text-[#082340]">
+                          {formatLoginIdentifier(u.email)}
+                        </span>
+                        {formatLoginIdentifier(u.email) !== u.email && (
+                          <span className="ml-1.5 text-[#7C899B]">({u.email})</span>
+                        )}
+                      </div>
                     </td>
                     <td className="py-3.5 px-4">
                       <select
@@ -199,20 +226,56 @@ export const UsersPage: React.FC = () => {
               setName(e.target.value);
               setError('');
             }}
-            placeholder="Contoh: Ignatius Budiarto"
+            placeholder="Contoh: Maria Wulandari"
           />
-          <TextInput
-            label="Alamat Email"
-            type="email"
-            required
-            value={email}
-            onChange={(e) => {
-              setEmail(e.target.value);
-              setError('');
-            }}
-            placeholder="nama@paroki.or.id"
-            error={error}
-          />
+          <div>
+            <TextInput
+              label="Username atau Email Login"
+              required
+              value={identifier}
+              onChange={(e) => {
+                setIdentifier(e.target.value);
+                setError('');
+              }}
+              placeholder="Contoh: katekis, pastor, peserta, atau email"
+              hint={
+                identifier.trim() && !identifier.includes('@')
+                  ? `Akan didaftarkan sebagai ${resolveLoginEmail(identifier)}`
+                  : 'Pengguna bisa masuk memakai username singkat tanpa @ atau alamat email.'
+              }
+            />
+          </div>
+          <div>
+            <label
+              htmlFor="new-user-password"
+              className="block text-[13px] font-medium text-[#0D1B2A] mb-1.5"
+            >
+              Kata Sandi Akun <span className="text-[#B42318]">*</span>
+            </label>
+            <div className="relative">
+              <input
+                id="new-user-password"
+                type={showPassword ? 'text' : 'password'}
+                autoComplete="new-password"
+                value={password}
+                onChange={(e) => {
+                  setPassword(e.target.value);
+                  setError('');
+                }}
+                placeholder="Minimal 8 karakter"
+                className="w-full min-h-[40px] pl-3 pr-11 py-2 text-[14px] text-[#0D1B2A] bg-white border border-[#CBD4E1] rounded-[8px] focus:outline-none focus:ring-2 focus:ring-[#082340]/20 focus:border-[#082340]"
+              />
+              <button
+                type="button"
+                aria-label={showPassword ? 'Sembunyikan kata sandi' : 'Tampilkan kata sandi'}
+                onClick={() => setShowPassword((prev) => !prev)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center rounded-[6px] text-[#5B687A] hover:text-[#082340] cursor-pointer"
+              >
+                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+            {error && <p className="mt-1.5 text-[12px] text-[#B42318]">{error}</p>}
+          </div>
           <SelectField
             label="Peran Hak Akses"
             value={userRole}

@@ -57,14 +57,17 @@ Aplikasi **Catevia** telah disiapkan untuk langsung di-deploy sebagai aplikasi w
 
 ---
 
-## Langkah 3 — WAJIB: Daftarkan Domain Hostinger di Firebase Console
+## Langkah 3 — WAJIB: Aktifkan Metode Masuk Email/Password & Akun Admin di Firebase Console
 
-Agar tombol **Masuk dengan Google** dan **Formulir Pendaftaran Mandiri** tidak diblokir (`auth/unauthorized-domain`):
+Catevia menggunakan autentikasi **Username/Email & Kata Sandi** melalui **Firebase Authentication**:
 
 1. Buka **Firebase Console** → pilih proyek Firebase Catevia Anda.
-2. Masuk ke **Authentication → Settings → Authorized domains**.
-3. Klik **Add domain**, lalu tambahkan domain/subdomain Hostinger Anda (contoh: `katekese.namaparoki.org` dan/atau `namaparoki.org` tanpa `https://`).
-4. Simpan perubahan.
+2. Masuk ke **Authentication → Sign-in method**, aktifkan penyedia **Email/Password** (*Enable*), lalu simpan.
+3. Masuk ke **Authentication → Users → Add user** untuk membuat akun Administrator utama:
+   - Email: `admin@catevia.paroki` (saat login di Catevia cukup ketik username `admin`)
+   - Password: isi kata sandi Administrator pilihan Anda.
+4. *(Opsional)* Setelah masuk sebagai `admin` di Catevia, Anda dapat langsung membuat akun untuk peran lain (`katekis`, `pastor`, `peserta`, dll.) beserta kata sandinya dari menu **Administrasi → Pengguna & Peran → Tambah Pengguna**.
+5. Pastikan juga domain Hostinger Anda terdaftar di **Authentication → Settings → Authorized domains**.
 
 ---
 
@@ -81,14 +84,15 @@ Agar tombol **Masuk dengan Google** dan **Formulir Pendaftaran Mandiri** tidak d
 
 - [ ] Halaman depan (*frontpage*) tampil penuh beserta logo Catevia & daftar program dari Firestore.
 - [ ] Refresh halaman di browser tidak menghasilkan error `404 Not Found`.
-- [ ] Klik **Masuk Portal** atau kirim **Formulir Pendaftaran Mandiri** → popup Login Google terbuka tanpa error `auth/unauthorized-domain`.
-- [ ] Masuk sebagai Administrator Paroki dan pastikan menu **Paroki & CMS Website** serta seluruh data katekese tersinkronisasi.
+- [ ] Klik **Masuk** dan coba login sebagai `admin` menggunakan kata sandi yang telah ditetapkan di Firebase Console.
+- [ ] Buat akun peran lain (`katekis`, `pastor`, `peserta`) melalui **Pengguna & Peran → Tambah Pengguna** dan uji login masing-masing peran.
+- [ ] Uji pengiriman **Formulir Pendaftaran Mandiri** di halaman depan dengan pembuatan akun peserta baru.
 - [ ] Tinjau ulang file `firestore.rules` dan pastikan aturan keamanan sudah ter-deploy di proyek Firebase produksi sebelum dibagikan ke seluruh umat.
 
 ---
 
 ## Pemecahan Masalah Singkat
 
-- **Popup Login Google menampilkan pesan domain belum terdaftar**: Pastikan domain Hostinger sudah ditambahkan di *Firebase Console → Authentication → Settings → Authorized domains*.
+- **Muncul pesan metode Email/Password belum diaktifkan**: Pastikan penyedia **Email/Password** sudah diaktifkan di *Firebase Console → Authentication → Sign-in method*.
 - **File lama masih muncul setelah deploy**: Bersihkan cache Hostinger di *hPanel → Lanjutan → Pengelola Cache (Flush Cache)*, lalu muat ulang browser (`Ctrl+Shift+R`).
 - **Deploy FTPS gagal `530 Login authentication failed`**: Pastikan `HOSTINGER_FTP_USERNAME` menggunakan username lengkap (termasuk prefix `u123456789...`) dan password FTP terbaru dari hPanel.

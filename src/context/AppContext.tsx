@@ -1,9 +1,11 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  createUserWithEmailAndPassword,
   User as FirebaseUser,
   onAuthStateChanged,
-  signInWithPopup,
+  signInWithEmailAndPassword,
   signOut as firebaseSignOut,
+  updateProfile,
 } from 'firebase/auth';
 import {
   collection,
@@ -62,13 +64,57 @@ import {
 } from '../data/cmsDefaults';
 import { canAccessPage, ROLE_PROFILES } from '../data/permissions';
 import {
+  ADMIN_LOGIN_EMAIL,
   auth,
   BOOTSTRAPPED_ADMIN_EMAIL,
+  createSecondaryAuthAccount,
   db,
-  googleProvider,
   handleFirestoreError,
+  isReservedUsername,
+  isValidLoginIdentifier,
   OperationType,
+  resolveLoginEmail,
 } from '../firebase';
+
+function formatFirebaseAuthError(error: unknown): string {
+  const code =
+    typeof error === 'object' && error !== null && 'code' in error
+      ? String((error as { code?: unknown }).code || '')
+      : error instanceof Error
+        ? error.message
+        : '';
+
+  if (
+    code.includes('auth/invalid-credential') ||
+    code.includes('auth/wrong-password') ||
+    code.includes('auth/user-not-found') ||
+    code.includes('auth/invalid-email')
+  ) {
+    return 'Username/email atau kata sandi tidak sesuai. Periksa kembali lalu coba lagi.';
+  }
+  if (code.includes('auth/email-already-in-use')) {
+    return 'Username atau email tersebut sudah terdaftar. Silakan masuk dengan kata sandi Anda.';
+  }
+  if (code.includes('auth/weak-password')) {
+    return 'Kata sandi terlalu lemah. Gunakan minimal 8 karakter.';
+  }
+  if (code.includes('auth/too-many-requests')) {
+    return 'Terlalu banyak percobaan masuk. Tunggu beberapa menit sebelum mencoba lagi.';
+  }
+  if (code.includes('auth/user-disabled')) {
+    return 'Akun ini telah dinonaktifkan. Hubungi Administrator Paroki.';
+  }
+  if (
+    code.includes('auth/operation-not-allowed') ||
+    code.includes('auth/configuration-not-found')
+  ) {
+    return 'Metode masuk Email/Password belum diaktifkan di Firebase Console. Aktifkan di Firebase Console → Authentication → Sign-in method → Email/Password.';
+  }
+  if (code.includes('auth/network-request-failed')) {
+    return 'Gagal terhubung ke server autentikasi. Periksa koneksi internet Anda.';
+  }
+  return 'Gagal memproses autentikasi akun. Periksa username/email dan kata sandi Anda.';
+}
 
 const DRAFT_STORAGE_KEY = 'catevia_participant_draft_v1';
 
@@ -96,7 +142,9 @@ interface AppContextValue {
   isAccountDeactivated: boolean;
   fatalFirestoreError: string | null;
   setRole: (role: UserRole) => void;
-  signInWithGoogle: () => Promise<void>;
+  signInWithCredentials: (identifier: string, password: string) => Promise<void>;
+  registerWithCredentials: (fullName: string, identifier: string, password: string) => Promise<void>;
+  clearAuthError: () => void;
   signOut: () => Promise<void>;
   isSeedingData: boolean;
 
@@ -112,7 +160,12 @@ interface AppContextValue {
   clearFrontpageRegistrationResult: () => void;
   submitFrontpageRegistration: (
     data: FrontpageRegistrationPayload,
-    pendingUploads?: PendingUploadFile[]
+    pendingUploads?: PendingUploadFile[],
+    accountCredentials?: {
+      mode: 'register' | 'login';
+      identifier: string;
+      password: string;
+    }
   ) => Promise<FrontpageRegistrationResult | null>;
   activePage: PageId;
   navigate: (page: PageId) => void;
@@ -189,7 +242,7 @@ interface AppContextValue {
   toggleMaterialCompleted: (materialId: string) => Promise<void>;
   addMaterial: (material: Omit<StudyMaterial, 'id' | 'updatedAt'>) => Promise<void>;
 
-  addUser: (user: Omit<SystemUser, 'id' | 'lastActive'>) => Promise<void>;
+  addUser: (user: Omit<SystemUser, 'id' | 'lastActive'> & { password?: string }) => Promise<void>;
   updateUserRole: (userId: string, role: UserRole) => Promise<void>;
   toggleUserActive: (userId: string) => Promise<void>;
 
@@ -584,8 +637,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       try {
         const snap = await getDoc(userDocRef);
+        const normalizedEmail = (fbUser.email || '').trim().toLowerCase();
         const isBootstrappedAdmin =
-          fbUser.emailVerified && fbUser.email === BOOTSTRAPPED_ADMIN_EMAIL;
+          normalizedEmail === ADMIN_LOGIN_EMAIL ||
+          (fbUser.emailVerified && normalizedEmail === BOOTSTRAPPED_ADMIN_EMAIL);
 
         let resolvedRole: UserRole = isBootstrappedAdmin ? 'admin' : 'general';
         let profileData: SystemUser;
@@ -661,7 +716,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       } catch (error) {
         console.error('Failed to bootstrap user profile:', error);
         setAuthError(
-          'Gagal memuat profil pengguna dari server. Pastikan akun Google Anda terverifikasi.'
+          'Gagal memuat profil pengguna dari server. Pastikan akun Anda aktif dan aturan basis data sudah diterapkan.'
         );
       } finally {
         setAuthReady(true);
@@ -1051,28 +1106,73 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
   }, [authReady, currentUser, actualRole, isAccountDeactivated]);
 
-  // Auth Actions
-  const signInWithGoogle = useCallback(async () => {
-    setAuthLoading(true);
+  // Auth Actions (Username/Email & Password via Firebase Auth)
+  const clearAuthError = useCallback(() => {
     setAuthError(null);
+  }, []);
+
+  const signInWithCredentials = useCallback(async (identifier: string, password: string) => {
+    setAuthError(null);
+    if (!isValidLoginIdentifier(identifier)) {
+      setAuthError('Masukkan username (min. 3 karakter) atau alamat email yang valid.');
+      return;
+    }
+    if (!password || password.length < 6) {
+      setAuthError('Masukkan kata sandi akun Anda (minimal 6 karakter).');
+      return;
+    }
+
+    const resolvedEmail = resolveLoginEmail(identifier);
+    setAuthLoading(true);
     try {
-      await signInWithPopup(auth, googleProvider);
+      await signInWithEmailAndPassword(auth, resolvedEmail, password);
     } catch (error) {
-      const msg = error instanceof Error ? error.message : 'Gagal masuk dengan Google.';
-      if (msg.includes('popup-closed-by-user')) {
-        setAuthError('Jendela masuk Google ditutup sebelum selesai. Silakan coba lagi.');
-      } else if (msg.includes('unauthorized-domain')) {
-        const host = typeof window !== 'undefined' ? window.location.hostname : 'domain ini';
-        setAuthError(
-          `Domain "${host}" belum terdaftar di Firebase Authorized Domains. Hubungi Administrator untuk menambahkannya di Firebase Console → Authentication → Settings.`
-        );
-      } else {
-        setAuthError('Tidak dapat masuk dengan Google. Periksa izin popup peramban Anda.');
-      }
+      setAuthError(formatFirebaseAuthError(error));
     } finally {
       setAuthLoading(false);
     }
   }, []);
+
+  const registerWithCredentials = useCallback(
+    async (fullName: string, identifier: string, password: string) => {
+      setAuthError(null);
+      const trimmedName = fullName.trim();
+      if (trimmedName.length < 3) {
+        setAuthError('Masukkan nama lengkap minimal 3 karakter.');
+        return;
+      }
+      if (!isValidLoginIdentifier(identifier)) {
+        setAuthError('Masukkan username (huruf/angka, min. 3 karakter) atau alamat email yang valid.');
+        return;
+      }
+      if (isReservedUsername(identifier)) {
+        setAuthError(
+          'Username tersebut khusus untuk akun pengurus paroki. Gunakan username atau email lain.'
+        );
+        return;
+      }
+      if (password.length < 8) {
+        setAuthError('Kata sandi minimal 8 karakter agar akun Anda aman.');
+        return;
+      }
+
+      const resolvedEmail = resolveLoginEmail(identifier);
+      setAuthLoading(true);
+      try {
+        const credential = await createUserWithEmailAndPassword(auth, resolvedEmail, password);
+        await updateProfile(credential.user, {
+          displayName: trimmedName.slice(0, 120),
+        }).catch(() => {
+          // Non-critical displayName update
+        });
+      } catch (error) {
+        setAuthError(formatFirebaseAuthError(error));
+      } finally {
+        setAuthLoading(false);
+      }
+    },
+    []
+  );
 
   const signOut = useCallback(async () => {
     await firebaseSignOut(auth);
@@ -1552,7 +1652,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const submitFrontpageRegistration = useCallback(
     async (
       data: FrontpageRegistrationPayload,
-      pendingUploads: PendingUploadFile[] = []
+      pendingUploads: PendingUploadFile[] = [],
+      accountCredentials?: {
+        mode: 'register' | 'login';
+        identifier: string;
+        password: string;
+      }
     ): Promise<FrontpageRegistrationResult | null> => {
       if (currentUser && isAccountDeactivated) {
         showToast({
@@ -1575,30 +1680,69 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return null;
       }
 
-      // Public visitor: trigger Google sign-in right in place without leaving the frontpage
+      // Public visitor: authenticate or create participant account right in place
+      if (!accountCredentials) {
+        showToast({
+          type: 'warning',
+          title: 'Lengkapi akun portal peserta',
+          description: 'Masukkan username/email dan kata sandi pada bagian Akun Portal Peserta.',
+        });
+        return null;
+      }
+
+      const { mode, identifier, password } = accountCredentials;
+      if (!isValidLoginIdentifier(identifier)) {
+        showToast({
+          type: 'warning',
+          title: 'Username atau email tidak valid',
+          description: 'Gunakan username (min. 3 karakter) atau alamat email yang valid.',
+        });
+        return null;
+      }
+      if (mode === 'register' && isReservedUsername(identifier)) {
+        showToast({
+          type: 'warning',
+          title: 'Username tidak tersedia',
+          description: 'Username tersebut khusus pengurus paroki. Pilih username atau email lain.',
+        });
+        return null;
+      }
+      if (password.length < (mode === 'register' ? 8 : 6)) {
+        showToast({
+          type: 'warning',
+          title: 'Kata sandi terlalu pendek',
+          description:
+            mode === 'register'
+              ? 'Gunakan kata sandi minimal 8 karakter untuk akun baru Anda.'
+              : 'Masukkan kata sandi akun Anda yang valid.',
+        });
+        return null;
+      }
+
+      const resolvedEmail = resolveLoginEmail(identifier);
       setPendingFrontpageSubmission({ data, pendingUploads });
       keepPublicOnSignInRef.current = true;
       setIsSubmittingFrontpageRegistration(true);
       try {
-        await signInWithPopup(auth, googleProvider);
+        if (mode === 'register') {
+          const credential = await createUserWithEmailAndPassword(auth, resolvedEmail, password);
+          await updateProfile(credential.user, {
+            displayName: data.fullName.trim().slice(0, 120),
+          }).catch(() => {
+            // Non-critical displayName update
+          });
+        } else {
+          await signInWithEmailAndPassword(auth, resolvedEmail, password);
+        }
         return null;
       } catch (error) {
         keepPublicOnSignInRef.current = false;
         setPendingFrontpageSubmission(null);
         setIsSubmittingFrontpageRegistration(false);
-        const msg = error instanceof Error ? error.message : '';
-        const isUnauthorizedDomain = msg.includes('unauthorized-domain');
-        const host = typeof window !== 'undefined' ? window.location.hostname : 'domain ini';
         showToast({
-          type: isUnauthorizedDomain ? 'error' : 'warning',
-          title: isUnauthorizedDomain
-            ? 'Domain belum diotorisasi di Firebase'
-            : msg.includes('popup-closed-by-user')
-              ? 'Verifikasi Google dibatalkan'
-              : 'Gagal membuka verifikasi Google',
-          description: isUnauthorizedDomain
-            ? `Tambahkan "${host}" ke Firebase Console → Authentication → Settings → Authorized domains. Data formulir Anda tetap tersimpan.`
-            : 'Data formulir Anda tetap aman dan tidak hilang. Silakan klik kirim kembali untuk melanjutkan.',
+          type: 'error',
+          title: mode === 'register' ? 'Gagal membuat akun peserta' : 'Gagal masuk ke akun',
+          description: formatFirebaseAuthError(error),
         });
         return null;
       }
@@ -2148,13 +2292,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Users CRUD (Admin)
   const addUser = useCallback(
-    async (user: Omit<SystemUser, 'id' | 'lastActive'>) => {
-      const id = `usr-${Date.now()}`;
+    async (user: Omit<SystemUser, 'id' | 'lastActive'> & { password?: string }) => {
+      const resolvedEmail = resolveLoginEmail(user.email);
+      let targetUid = `usr-${Date.now()}`;
+
+      if (user.password && user.password.length >= 8) {
+        try {
+          targetUid = await createSecondaryAuthAccount(resolvedEmail, user.password, user.name);
+        } catch (error) {
+          showToast({
+            type: 'error',
+            title: 'Gagal membuat akun login',
+            description: formatFirebaseAuthError(error),
+          });
+          throw error;
+        }
+      }
+
       try {
-        await setDoc(doc(db, 'users', id), {
-          uid: id,
+        await setDoc(doc(db, 'users', targetUid), {
+          uid: targetUid,
           name: user.name.slice(0, 120),
-          email: user.email.slice(0, 160),
+          email: resolvedEmail.slice(0, 160),
           role: user.role,
           lingkungan: user.lingkungan.slice(0, 100),
           active: user.active,
@@ -2165,10 +2324,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         showToast({
           type: 'success',
           title: 'Pengguna berhasil ditambahkan',
-          description: `${user.name} kini memiliki peran ${ROLE_PROFILES[user.role].label}.`,
+          description: `${user.name} (${ROLE_PROFILES[user.role].label}) kini siap masuk menggunakan username/email dan kata sandi.`,
         });
       } catch (error) {
-        handleFirestoreError(error, OperationType.CREATE, `users/${id}`);
+        handleFirestoreError(error, OperationType.CREATE, `users/${targetUid}`);
       }
     },
     [showToast]
@@ -2575,7 +2734,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         isAccountDeactivated,
         fatalFirestoreError,
         setRole,
-        signInWithGoogle,
+        signInWithCredentials,
+        registerWithCredentials,
+        clearAuthError,
         signOut,
         isSeedingData,
         siteMode,
