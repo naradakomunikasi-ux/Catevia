@@ -31,7 +31,6 @@ const AppShell: React.FC = () => {
     isAccountDeactivated,
     fatalFirestoreError,
     signInWithCredentials,
-    registerWithCredentials,
     clearAuthError,
     signOut,
     isSeedingData,
@@ -75,7 +74,6 @@ const AppShell: React.FC = () => {
       <>
         <LoginScreen
           onSignIn={signInWithCredentials}
-          onRegister={registerWithCredentials}
           onClearError={clearAuthError}
           onBackToPublic={openPublicWebsite}
           parishLabel={frontpageContent.parishLabel}

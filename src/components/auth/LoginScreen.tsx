@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ArrowLeft, ExternalLink, Eye, EyeOff, Lock, ShieldCheck, User, UserPlus } from 'lucide-react';
+import { ArrowLeft, ExternalLink, Eye, EyeOff, Lock, ShieldCheck, User, Users } from 'lucide-react';
 import {
   AUTH_USERNAME_DOMAIN,
   FIREBASE_AUTH_PROVIDERS_URL,
@@ -10,7 +10,6 @@ import { Button } from '../ui/Button';
 
 interface LoginScreenProps {
   onSignIn: (identifier: string, password: string) => Promise<void>;
-  onRegister: (fullName: string, identifier: string, password: string) => Promise<void>;
   onClearError?: () => void;
   onBackToPublic?: () => void;
   parishLabel?: string;
@@ -18,20 +17,47 @@ interface LoginScreenProps {
   error: string | null;
 }
 
+interface NonAdminRoleAccount {
+  roleLabel: string;
+  personHint: string;
+  username: string;
+  defaultPassword: string;
+}
+
+const NON_ADMIN_DEMO_PASSWORD = '12345678';
+
+// Non-admin role access reference (Admin account is intentionally excluded here)
+const NON_ADMIN_ROLE_ACCOUNTS: NonAdminRoleAccount[] = [
+  {
+    roleLabel: 'Katekis / Staf Operasional',
+    personHint: 'Pengelolaan peserta, kelas & kehadiran',
+    username: 'katekis',
+    defaultPassword: NON_ADMIN_DEMO_PASSWORD,
+  },
+  {
+    roleLabel: 'Pastor Paroki / Penyetuju',
+    personHint: 'Tinjauan & persetujuan kelayakan sakramen',
+    username: 'pastor',
+    defaultPassword: NON_ADMIN_DEMO_PASSWORD,
+  },
+  {
+    roleLabel: 'Peserta / Umat',
+    personHint: 'Jadwal kelas, unggah berkas & materi',
+    username: 'peserta',
+    defaultPassword: NON_ADMIN_DEMO_PASSWORD,
+  },
+];
+
 export const LoginScreen: React.FC<LoginScreenProps> = ({
   onSignIn,
-  onRegister,
   onClearError,
   onBackToPublic,
   parishLabel,
   loading,
   error,
 }) => {
-  const [mode, setMode] = useState<'login' | 'register'>('login');
-  const [fullName, setFullName] = useState('');
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
   const [logoError, setLogoError] = useState(false);
@@ -41,50 +67,27 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
     activeError && activeError.toLowerCase().includes('email/password belum diaktifkan')
   );
 
-  const switchMode = (nextMode: 'login' | 'register') => {
-    setMode(nextMode);
-    setLocalError(null);
-    setPassword('');
-    setConfirmPassword('');
-    onClearError?.();
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLocalError(null);
     onClearError?.();
 
-    if (mode === 'login') {
-      if (!identifier.trim()) {
-        setLocalError('Masukkan username atau alamat email Anda.');
-        return;
-      }
-      if (!password) {
-        setLocalError('Masukkan kata sandi akun Anda.');
-        return;
-      }
-      await onSignIn(identifier.trim(), password);
-      return;
-    }
-
-    if (fullName.trim().length < 3) {
-      setLocalError('Masukkan nama lengkap minimal 3 karakter.');
-      return;
-    }
     if (!identifier.trim()) {
-      setLocalError('Masukkan username atau alamat email untuk akun baru Anda.');
+      setLocalError('Masukkan username atau alamat email Anda.');
       return;
     }
-    if (password.length < 8) {
-      setLocalError('Kata sandi minimal 8 karakter.');
+    if (!password) {
+      setLocalError('Masukkan kata sandi akun Anda.');
       return;
     }
-    if (password !== confirmPassword) {
-      setLocalError('Konfirmasi kata sandi tidak cocok.');
-      return;
-    }
+    await onSignIn(identifier.trim(), password);
+  };
 
-    await onRegister(fullName.trim(), identifier.trim(), password);
+  const handleUseRoleAccount = (account: NonAdminRoleAccount) => {
+    setIdentifier(account.username);
+    setPassword(account.defaultPassword);
+    setLocalError(null);
+    onClearError?.();
   };
 
   const previewResolvedEmail =
@@ -120,47 +123,11 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
           )}
 
           <h1 className="mt-5 text-[22px] font-bold tracking-tight text-[#0D1B2A]">
-            {mode === 'login' ? 'Masuk ke Portal Catevia' : 'Buat Akun Peserta Catevia'}
+            Masuk ke Portal Catevia
           </h1>
           <p className="mt-1.5 text-[14px] text-[#4D5B6D] leading-relaxed">
-            {mode === 'login'
-              ? 'Masukkan username atau email dan kata sandi Anda untuk mengakses portal katekese paroki.'
-              : 'Daftar akun peserta baru menggunakan username/email dan kata sandi untuk memantau kelas dan berkas.'}
+            Masukkan username atau email dan kata sandi Anda untuk mengakses portal katekese paroki.
           </p>
-        </div>
-
-        {/* Mode Switcher */}
-        <div
-          role="tablist"
-          aria-label="Mode autentikasi"
-          className="mt-6 grid grid-cols-2 p-1 rounded-[8px] bg-[#F2F5FA] border border-[#E2E7EF]"
-        >
-          <button
-            type="button"
-            role="tab"
-            aria-selected={mode === 'login'}
-            onClick={() => switchMode('login')}
-            className={`min-h-[38px] text-[13px] font-semibold rounded-[6px] transition-colors cursor-pointer ${
-              mode === 'login'
-                ? 'bg-white text-[#082340] shadow-[0_1px_2px_rgba(8,35,64,0.08)]'
-                : 'text-[#5B687A] hover:text-[#0D1B2A]'
-            }`}
-          >
-            Masuk Portal
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={mode === 'register'}
-            onClick={() => switchMode('register')}
-            className={`min-h-[38px] text-[13px] font-semibold rounded-[6px] transition-colors cursor-pointer ${
-              mode === 'register'
-                ? 'bg-white text-[#082340] shadow-[0_1px_2px_rgba(8,35,64,0.08)]'
-                : 'text-[#5B687A] hover:text-[#0D1B2A]'
-            }`}
-          >
-            Daftar Akun Baru
-          </button>
         </div>
 
         {activeError && (
@@ -183,36 +150,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
           </div>
         )}
 
-        <form onSubmit={(e) => void handleSubmit(e)} className="mt-5 space-y-4" noValidate>
-          {mode === 'register' && (
-            <div>
-              <label
-                htmlFor="auth-fullname"
-                className="block text-[13px] font-medium text-[#0D1B2A] mb-1.5"
-              >
-                Nama Lengkap <span className="text-[#B42318]">*</span>
-              </label>
-              <div className="relative">
-                <UserPlus
-                  className="w-4 h-4 text-[#69778A] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
-                  aria-hidden="true"
-                />
-                <input
-                  id="auth-fullname"
-                  type="text"
-                  autoComplete="name"
-                  value={fullName}
-                  onChange={(e) => {
-                    setFullName(e.target.value);
-                    setLocalError(null);
-                  }}
-                  placeholder="Contoh: Clara Novita Sari"
-                  className="w-full min-h-[42px] pl-9 pr-3 py-2 text-[14px] text-[#0D1B2A] bg-white border border-[#CBD4E1] rounded-[8px] focus:outline-none focus:ring-2 focus:ring-[#082340]/20 focus:border-[#082340]"
-                />
-              </div>
-            </div>
-          )}
-
+        <form onSubmit={(e) => void handleSubmit(e)} className="mt-6 space-y-4" noValidate>
           <div>
             <label
               htmlFor="auth-identifier"
@@ -236,11 +174,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                   setIdentifier(e.target.value);
                   setLocalError(null);
                 }}
-                placeholder={
-                  mode === 'login'
-                    ? 'Contoh: admin, katekis, pastor, atau email'
-                    : 'Contoh: clara.novita atau email Anda'
-                }
+                placeholder="Masukkan username atau email"
                 className="w-full min-h-[42px] pl-9 pr-3 py-2 text-[14px] text-[#0D1B2A] bg-white border border-[#CBD4E1] rounded-[8px] focus:outline-none focus:ring-2 focus:ring-[#082340]/20 focus:border-[#082340]"
               />
             </div>
@@ -266,13 +200,13 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
               <input
                 id="auth-password"
                 type={showPassword ? 'text' : 'password'}
-                autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
+                autoComplete="current-password"
                 value={password}
                 onChange={(e) => {
                   setPassword(e.target.value);
                   setLocalError(null);
                 }}
-                placeholder={mode === 'login' ? 'Masukkan kata sandi' : 'Minimal 8 karakter'}
+                placeholder="Masukkan kata sandi"
                 className="w-full min-h-[42px] pl-9 pr-11 py-2 text-[14px] text-[#0D1B2A] bg-white border border-[#CBD4E1] rounded-[8px] focus:outline-none focus:ring-2 focus:ring-[#082340]/20 focus:border-[#082340]"
               />
               <button
@@ -286,51 +220,59 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
             </div>
           </div>
 
-          {mode === 'register' && (
-            <div>
-              <label
-                htmlFor="auth-confirm-password"
-                className="block text-[13px] font-medium text-[#0D1B2A] mb-1.5"
-              >
-                Konfirmasi Kata Sandi <span className="text-[#B42318]">*</span>
-              </label>
-              <div className="relative">
-                <Lock
-                  className="w-4 h-4 text-[#69778A] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
-                  aria-hidden="true"
-                />
-                <input
-                  id="auth-confirm-password"
-                  type={showPassword ? 'text' : 'password'}
-                  autoComplete="new-password"
-                  value={confirmPassword}
-                  onChange={(e) => {
-                    setConfirmPassword(e.target.value);
-                    setLocalError(null);
-                  }}
-                  placeholder="Ketik ulang kata sandi"
-                  className="w-full min-h-[42px] pl-9 pr-3 py-2 text-[14px] text-[#0D1B2A] bg-white border border-[#CBD4E1] rounded-[8px] focus:outline-none focus:ring-2 focus:ring-[#082340]/20 focus:border-[#082340]"
-                />
-              </div>
-            </div>
-          )}
-
           <div className="pt-1">
             <Button type="submit" variant="primary" size="lg" fullWidth loading={loading}>
-              {mode === 'login' ? 'Masuk ke Portal' : 'Buat Akun & Masuk'}
+              Masuk ke Portal
             </Button>
           </div>
         </form>
 
-        <div className="mt-6 pt-5 border-t border-[#EEF1F6] flex items-start gap-2.5 text-[12px] text-[#5B687A] leading-relaxed">
+        {/* Non-Admin Role Accounts Reference (Admin deliberately omitted) */}
+        <div className="mt-6 pt-5 border-t border-[#EEF1F6]">
+          <div className="flex items-center justify-between gap-2 mb-3">
+            <h2 className="text-[13px] font-semibold text-[#0D1B2A] flex items-center gap-1.5">
+              <Users className="w-4 h-4 text-[#082340]" aria-hidden="true" />
+              <span>Akun Akses Peran</span>
+            </h2>
+            <span className="text-[11px] font-mono text-[#69778A]">@{AUTH_USERNAME_DOMAIN}</span>
+          </div>
+
+          <div className="divide-y divide-[#EEF1F6] border border-[#E2E7EF] rounded-[10px] bg-[#FAFBFC] overflow-hidden">
+            {NON_ADMIN_ROLE_ACCOUNTS.map((acc) => (
+              <div
+                key={acc.username}
+                className="px-3.5 py-2.5 flex items-center justify-between gap-3"
+              >
+                <div className="min-w-0">
+                  <p className="text-[13px] font-semibold text-[#0D1B2A] truncate">
+                    {acc.roleLabel}
+                  </p>
+                  <p className="text-[12px] text-[#4D5B6D] mt-0.5">
+                    User: <span className="font-mono font-semibold text-[#082340]">{acc.username}</span>
+                    <span className="mx-1.5 text-[#CBD4E1]">·</span>
+                    Password:{' '}
+                    <span className="font-mono font-semibold text-[#082340]">
+                      {acc.defaultPassword}
+                    </span>
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleUseRoleAccount(acc)}
+                  className="shrink-0 px-2.5 min-h-[32px] rounded-[6px] border border-[#CBD4E1] bg-white text-[12px] font-medium text-[#082340] hover:bg-[#F2F5FA] transition-colors cursor-pointer"
+                >
+                  Isi
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-5 pt-4 border-t border-[#EEF1F6] flex items-start gap-2.5 text-[12px] text-[#5B687A] leading-relaxed">
           <ShieldCheck className="w-4 h-4 text-[#082340] shrink-0 mt-0.5" aria-hidden="true" />
           <p>
-            Pengurus paroki dapat masuk dengan username singkat (seperti{' '}
-            <span className="font-mono text-[#0D1B2A]">admin</span>,{' '}
-            <span className="font-mono text-[#0D1B2A]">katekis</span>,{' '}
-            <span className="font-mono text-[#0D1B2A]">pastor</span> yang dipetakan ke{' '}
-            <span className="font-mono text-[#0D1B2A]">@{AUTH_USERNAME_DOMAIN}</span>) atau alamat
-            email terdaftar. Kata sandi diverifikasi aman di server autentikasi.
+            Pendaftaran akun pengguna baru hanya dilakukan melalui menu Administrasi oleh
+            Administrator Paroki.
           </p>
         </div>
       </div>

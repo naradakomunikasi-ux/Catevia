@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Eye, EyeOff, Plus, ShieldCheck } from 'lucide-react';
+import { Eye, EyeOff, Plus, ShieldCheck, UserCheck } from 'lucide-react';
 import { UserRole } from '../types/catevia';
 import { ROLE_PROFILES } from '../data/permissions';
 import { LINGKUNGAN_OPTIONS } from '../data/seedData';
@@ -14,10 +14,41 @@ import { StatusIndicator } from '../components/ui/StatusIndicator';
 import { ConfirmDialog, Modal } from '../components/ui/Modal';
 import { SelectField, TextInput } from '../components/ui/Input';
 
+const STANDARD_ROLE_TEMPLATES: Array<{
+  username: string;
+  name: string;
+  role: UserRole;
+  lingkungan: string;
+}> = [
+  {
+    username: 'katekis',
+    name: 'Maria Wulandari',
+    role: 'operational',
+    lingkungan: 'St. Lukas',
+  },
+  {
+    username: 'pastor',
+    name: 'RD. Yohanes Setiawan',
+    role: 'approver',
+    lingkungan: 'Pastoran Paroki',
+  },
+  {
+    username: 'peserta',
+    name: 'Clara Novita Sari',
+    role: 'general',
+    lingkungan: 'St. Lukas',
+  },
+];
+
 export const UsersPage: React.FC = () => {
-  const { currentUser, users, addUser, updateUserRole, toggleUserActive } = useApp();
+  const { currentUser, users, addUser, updateUserRole, toggleUserActive, showToast } = useApp();
 
   const [addOpen, setAddOpen] = useState(false);
+  const [provisionOpen, setProvisionOpen] = useState(false);
+  const [provisionPassword, setProvisionPassword] = useState('');
+  const [showProvisionPassword, setShowProvisionPassword] = useState(false);
+  const [provisionError, setProvisionError] = useState('');
+  const [provisioning, setProvisioning] = useState(false);
   const [name, setName] = useState('');
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
@@ -73,6 +104,51 @@ export const UsersPage: React.FC = () => {
     }
   };
 
+  const missingStandardAccounts = STANDARD_ROLE_TEMPLATES.filter((tpl) => {
+    const targetEmail = resolveLoginEmail(tpl.username);
+    return !users.some((u) => u.email.trim().toLowerCase() === targetEmail);
+  });
+
+  const handleProvisionStandardAccounts = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (provisionPassword.length < 8) {
+      setProvisionError('Masukkan kata sandi minimal 8 karakter untuk akun peran standar.');
+      return;
+    }
+    setProvisionError('');
+    setProvisioning(true);
+    let createdCount = 0;
+    try {
+      for (const tpl of missingStandardAccounts) {
+        try {
+          await addUser({
+            name: tpl.name,
+            email: resolveLoginEmail(tpl.username),
+            password: provisionPassword,
+            role: tpl.role,
+            lingkungan: tpl.lingkungan,
+            active: true,
+          });
+          createdCount += 1;
+        } catch {
+          // Continue remaining accounts; addUser already surfaced toast
+        }
+      }
+      if (createdCount > 0) {
+        showToast({
+          type: 'success',
+          title: `${createdCount} akun peran standar siap digunakan`,
+          description: 'Pengguna dapat langsung masuk dari halaman login menggunakan username masing-masing.',
+        });
+        setProvisionPassword('');
+        setShowProvisionPassword(false);
+        setProvisionOpen(false);
+      }
+    } finally {
+      setProvisioning(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
@@ -81,17 +157,28 @@ export const UsersPage: React.FC = () => {
             Pengguna & Hak Akses Peran
           </h1>
           <p className="mt-1 text-[14px] text-[#4D5B6D]">
-            Kelola akun tim katekis, Pastor Paroki, dan peserta sesuai prinsip hak akses minimal (RBAC).
+            Daftarkan akun baru untuk tim katekis, Pastor Paroki, dan peserta serta kelola hak akses (RBAC).
           </p>
         </div>
 
-        <Button
-          variant="primary"
-          icon={<Plus className="w-4 h-4" />}
-          onClick={() => setAddOpen(true)}
-        >
-          Tambah Pengguna
-        </Button>
+        <div className="flex flex-wrap items-center gap-2.5">
+          {missingStandardAccounts.length > 0 && (
+            <Button
+              variant="secondary"
+              icon={<UserCheck className="w-4 h-4" />}
+              onClick={() => setProvisionOpen(true)}
+            >
+              Siapkan Akun Peran ({missingStandardAccounts.length})
+            </Button>
+          )}
+          <Button
+            variant="primary"
+            icon={<Plus className="w-4 h-4" />}
+            onClick={() => setAddOpen(true)}
+          >
+            Daftar Akun Baru
+          </Button>
+        </div>
       </div>
 
       {/* Users Table */}
@@ -295,6 +382,84 @@ export const UsersPage: React.FC = () => {
               ...LINGKUNGAN_OPTIONS.map((l) => ({ value: l, label: `Lingkungan ${l}` })),
             ]}
           />
+        </form>
+      </Modal>
+
+      {/* Provision Standard Non-Admin Role Accounts Modal */}
+      <Modal
+        open={provisionOpen}
+        onClose={() => setProvisionOpen(false)}
+        title="Siapkan Akun Peran Standar"
+        description="Buat sekaligus akun login Firebase & profil peran untuk akun non-admin yang belum terdaftar."
+        footer={
+          <>
+            <Button
+              variant="secondary"
+              onClick={() => setProvisionOpen(false)}
+              disabled={provisioning}
+            >
+              Batal
+            </Button>
+            <Button
+              variant="primary"
+              loading={provisioning}
+              onClick={(e) => void handleProvisionStandardAccounts(e)}
+            >
+              Buat {missingStandardAccounts.length} Akun Peran
+            </Button>
+          </>
+        }
+      >
+        <form onSubmit={(e) => void handleProvisionStandardAccounts(e)} className="space-y-4">
+          <div className="rounded-[8px] border border-[#E2E7EF] bg-[#FAFBFC] divide-y divide-[#EEF1F6]">
+            {missingStandardAccounts.map((tpl) => (
+              <div key={tpl.username} className="px-3.5 py-2.5 flex items-center justify-between gap-2">
+                <div>
+                  <p className="text-[13px] font-semibold text-[#0D1B2A]">
+                    {ROLE_PROFILES[tpl.role].label}
+                  </p>
+                  <p className="text-[12px] text-[#5B687A]">{tpl.name}</p>
+                </div>
+                <span className="text-[12px] font-mono text-[#082340]">
+                  {tpl.username}
+                </span>
+              </div>
+            ))}
+          </div>
+
+          <div>
+            <label
+              htmlFor="provision-role-password"
+              className="block text-[13px] font-medium text-[#0D1B2A] mb-1.5"
+            >
+              Kata Sandi untuk Akun Peran Non-Admin <span className="text-[#B42318]">*</span>
+            </label>
+            <div className="relative">
+              <input
+                id="provision-role-password"
+                type={showProvisionPassword ? 'text' : 'password'}
+                autoComplete="new-password"
+                value={provisionPassword}
+                onChange={(e) => {
+                  setProvisionPassword(e.target.value);
+                  setProvisionError('');
+                }}
+                placeholder="Masukkan kata sandi (minimal 8 karakter)"
+                className="w-full min-h-[40px] pl-3 pr-11 py-2 text-[14px] text-[#0D1B2A] bg-white border border-[#CBD4E1] rounded-[8px] focus:outline-none focus:ring-2 focus:ring-[#082340]/20 focus:border-[#082340]"
+              />
+              <button
+                type="button"
+                aria-label={showProvisionPassword ? 'Sembunyikan kata sandi' : 'Tampilkan kata sandi'}
+                onClick={() => setShowProvisionPassword((prev) => !prev)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center rounded-[6px] text-[#5B687A] hover:text-[#082340] cursor-pointer"
+              >
+                {showProvisionPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+            {provisionError && (
+              <p className="mt-1.5 text-[12px] text-[#B42318]">{provisionError}</p>
+            )}
+          </div>
         </form>
       </Modal>
 

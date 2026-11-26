@@ -77,9 +77,9 @@ export const DEFAULT_FRONTPAGE_CONTENT: FrontpageContent = {
         'Baca detail program untuk mengetahui jadwal kelas, ketentuan paroki, dan dokumen yang perlu disiapkan.',
     },
     {
-      title: 'Masuk atau Buat Akun Catevia',
+      title: 'Masuk ke Portal Catevia',
       description:
-        'Klik tombol Masuk untuk membuka Portal Catevia menggunakan username/email dan kata sandi Anda, atau buat akun baru saat mendaftar.',
+        'Klik tombol Masuk untuk membuka Portal Catevia menggunakan username/email dan kata sandi yang terdaftar oleh Administrator Paroki.',
     },
     {
       title: 'Lengkapi Formulir & Unggah Dokumen',

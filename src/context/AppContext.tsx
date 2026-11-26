@@ -1,11 +1,9 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  createUserWithEmailAndPassword,
   User as FirebaseUser,
   onAuthStateChanged,
   signInWithEmailAndPassword,
   signOut as firebaseSignOut,
-  updateProfile,
 } from 'firebase/auth';
 import {
   collection,
@@ -70,7 +68,6 @@ import {
   createSecondaryAuthAccount,
   db,
   handleFirestoreError,
-  isReservedUsername,
   isValidLoginIdentifier,
   OperationType,
   resolveLoginEmail,
@@ -143,7 +140,6 @@ interface AppContextValue {
   fatalFirestoreError: string | null;
   setRole: (role: UserRole) => void;
   signInWithCredentials: (identifier: string, password: string) => Promise<void>;
-  registerWithCredentials: (fullName: string, identifier: string, password: string) => Promise<void>;
   clearAuthError: () => void;
   signOut: () => Promise<void>;
   isSeedingData: boolean;
@@ -162,7 +158,6 @@ interface AppContextValue {
     data: FrontpageRegistrationPayload,
     pendingUploads?: PendingUploadFile[],
     accountCredentials?: {
-      mode: 'register' | 'login';
       identifier: string;
       password: string;
     }
@@ -1133,47 +1128,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, []);
 
-  const registerWithCredentials = useCallback(
-    async (fullName: string, identifier: string, password: string) => {
-      setAuthError(null);
-      const trimmedName = fullName.trim();
-      if (trimmedName.length < 3) {
-        setAuthError('Masukkan nama lengkap minimal 3 karakter.');
-        return;
-      }
-      if (!isValidLoginIdentifier(identifier)) {
-        setAuthError('Masukkan username (huruf/angka, min. 3 karakter) atau alamat email yang valid.');
-        return;
-      }
-      if (isReservedUsername(identifier)) {
-        setAuthError(
-          'Username tersebut khusus untuk akun pengurus paroki. Gunakan username atau email lain.'
-        );
-        return;
-      }
-      if (password.length < 8) {
-        setAuthError('Kata sandi minimal 8 karakter agar akun Anda aman.');
-        return;
-      }
-
-      const resolvedEmail = resolveLoginEmail(identifier);
-      setAuthLoading(true);
-      try {
-        const credential = await createUserWithEmailAndPassword(auth, resolvedEmail, password);
-        await updateProfile(credential.user, {
-          displayName: trimmedName.slice(0, 120),
-        }).catch(() => {
-          // Non-critical displayName update
-        });
-      } catch (error) {
-        setAuthError(formatFirebaseAuthError(error));
-      } finally {
-        setAuthLoading(false);
-      }
-    },
-    []
-  );
-
   const signOut = useCallback(async () => {
     await firebaseSignOut(auth);
     setPreviewRole(null);
@@ -1654,7 +1608,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       data: FrontpageRegistrationPayload,
       pendingUploads: PendingUploadFile[] = [],
       accountCredentials?: {
-        mode: 'register' | 'login';
         identifier: string;
         password: string;
       }
@@ -1680,17 +1633,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return null;
       }
 
-      // Public visitor: authenticate or create participant account right in place
+      // Public visitor: sign in with existing participant account provided by Admin
       if (!accountCredentials) {
         showToast({
           type: 'warning',
-          title: 'Lengkapi akun portal peserta',
-          description: 'Masukkan username/email dan kata sandi pada bagian Akun Portal Peserta.',
+          title: 'Masuk akun peserta terlebih dahulu',
+          description:
+            'Masukkan username/email dan kata sandi akun peserta yang diberikan oleh Admin Paroki.',
         });
         return null;
       }
 
-      const { mode, identifier, password } = accountCredentials;
+      const { identifier, password } = accountCredentials;
       if (!isValidLoginIdentifier(identifier)) {
         showToast({
           type: 'warning',
@@ -1699,22 +1653,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         });
         return null;
       }
-      if (mode === 'register' && isReservedUsername(identifier)) {
+      if (password.length < 6) {
         showToast({
           type: 'warning',
-          title: 'Username tidak tersedia',
-          description: 'Username tersebut khusus pengurus paroki. Pilih username atau email lain.',
-        });
-        return null;
-      }
-      if (password.length < (mode === 'register' ? 8 : 6)) {
-        showToast({
-          type: 'warning',
-          title: 'Kata sandi terlalu pendek',
-          description:
-            mode === 'register'
-              ? 'Gunakan kata sandi minimal 8 karakter untuk akun baru Anda.'
-              : 'Masukkan kata sandi akun Anda yang valid.',
+          title: 'Kata sandi belum lengkap',
+          description: 'Masukkan kata sandi akun peserta Anda yang valid.',
         });
         return null;
       }
@@ -1724,16 +1667,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       keepPublicOnSignInRef.current = true;
       setIsSubmittingFrontpageRegistration(true);
       try {
-        if (mode === 'register') {
-          const credential = await createUserWithEmailAndPassword(auth, resolvedEmail, password);
-          await updateProfile(credential.user, {
-            displayName: data.fullName.trim().slice(0, 120),
-          }).catch(() => {
-            // Non-critical displayName update
-          });
-        } else {
-          await signInWithEmailAndPassword(auth, resolvedEmail, password);
-        }
+        await signInWithEmailAndPassword(auth, resolvedEmail, password);
         return null;
       } catch (error) {
         keepPublicOnSignInRef.current = false;
@@ -1741,7 +1675,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setIsSubmittingFrontpageRegistration(false);
         showToast({
           type: 'error',
-          title: mode === 'register' ? 'Gagal membuat akun peserta' : 'Gagal masuk ke akun',
+          title: 'Gagal masuk ke akun peserta',
           description: formatFirebaseAuthError(error),
         });
         return null;
@@ -2735,7 +2669,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         fatalFirestoreError,
         setRole,
         signInWithCredentials,
-        registerWithCredentials,
         clearAuthError,
         signOut,
         isSeedingData,
